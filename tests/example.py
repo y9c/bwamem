@@ -3,8 +3,7 @@
 Example usage of the bwamem package with both single-end and paired-end alignment support.
 """
 
-from bwamem import BwaAligner, BwaIndexer, Alignment, PairedAlignment
-import os
+from bwamem import BwaAligner, BwaIndexer
 
 def main():
     """Demonstrate basic usage of bwamem with SE and PE alignment."""
@@ -33,13 +32,13 @@ def main():
     
     try:
         # This will fail without a valid index, but shows the API
-        aligner = BwaAligner("path/to/your/bwa/index")
+        BwaAligner("path/to/your/bwa/index")
         print("BwaAligner initialized successfully!")
         
         # Example sequences
         seq1 = "ACGATCGCGATCGA"
         seq2 = "TTCGATCGATCGAT"
-        print(f"Example sequences:")
+        print("Example sequences:")
         print(f"  Read 1: {seq1}")
         print(f"  Read 2: {seq2}")
         

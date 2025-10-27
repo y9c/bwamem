@@ -5,7 +5,7 @@ Based on the BWA kseq implementation.
 """
 
 import gzip
-from typing import Iterator, Tuple, Optional, TextIO
+from typing import Iterator, Tuple
 
 
 class FastqRead:

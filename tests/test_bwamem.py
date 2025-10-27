@@ -103,7 +103,7 @@ def test_data_structures():
     assert se_aln.cigar == '100M'
     assert se_aln.NM == 0
     assert se_aln.score == 100
-    assert se_aln.is_primary == True
+    assert se_aln.is_primary
     
     # Test PairedAlignment
     pe_aln = PairedAlignment(
@@ -115,7 +115,7 @@ def test_data_structures():
     
     assert pe_aln.read1 == se_aln
     assert pe_aln.read2 == se_aln
-    assert pe_aln.is_proper_pair == True
+    assert pe_aln.is_proper_pair
     assert pe_aln.insert_size == 500
 
 
@@ -153,18 +153,15 @@ def test_align_method_parameter_types():
     sig = inspect.signature(BwaAligner.align)
     
     # Check parameter types
-    assert sig.parameters['seq1'].annotation == str
-    assert sig.parameters['seq2'].annotation == str
+    assert sig.parameters['seq1'].annotation is str
+    assert sig.parameters['seq2'].annotation is str
     # Per-call insert parameters removed
 
 
 def test_single_end_vs_paired_end_usage():
     """Test the different usage patterns for SE vs PE alignment."""
-    from bwamem import BwaAligner, Alignment, PairedAlignment
-    import inspect
     
     # Test that we can call align with just one sequence (SE)
-    sig = inspect.signature(BwaAligner.align)
     se_params = {'seq1': 'ACGATCGCGATCGA'}
     
     # This should be valid for single-end

@@ -6,7 +6,6 @@ Reads FASTQ files and performs paired-end alignment.
 
 import sys
 import os
-import tempfile
 from pathlib import Path
 
 # Add parent directory to path to import bwamem
@@ -74,7 +73,7 @@ def test_paired_end_mapping():
                 )
                 
                 if isinstance(result, bwamem.PairedAlignment):
-                    print(f"✅ Paired alignment successful!")
+                    print("✅ Paired alignment successful!")
                     print(f"   Read 1: {result.read1}")
                     print(f"   Read 2: {result.read2}")
                     print(f"   Proper pair: {result.is_proper_pair}")
@@ -122,7 +121,7 @@ def test_single_end_mapping():
         if results:
             aln = results[0]
             assert isinstance(aln, bwamem.Alignment)
-            print(f"✅ Single alignment successful!")
+            print("✅ Single alignment successful!")
             print(f"   Result: {aln}")
             if aln.cigar:
                 print(f"   CIGAR: {aln.cigar}")
