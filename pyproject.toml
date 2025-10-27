@@ -40,7 +40,6 @@ dev = [
     "pytest-cov",
     "black",
     "isort",
-    "flake8",
     "mypy",
     "twine",
 ]
@@ -117,7 +116,6 @@ addopts = "-v --tb=short"
 [dependency-groups]
 dev = [
     "black>=24.8.0",
-    "flake8>=5.0.4",
     "isort>=5.13.2",
     "mypy>=1.14.1",
     "pytest>=8.3.5",
