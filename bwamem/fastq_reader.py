@@ -7,8 +7,7 @@ with minimal overhead, similar to BWA's kseq approach.
 """
 
 import gzip
-import os
-from typing import Iterator, Tuple, Optional
+from typing import Iterator, Tuple, Optional, Union
 from collections import namedtuple
 
 # Use namedtuple for better performance
@@ -166,20 +165,3 @@ def read_paired_fastq(file1: str, file2: str) -> Iterator[Tuple[FastqRead, Fastq
             if pair is None:
                 break
             yield pair
-
-
-# Legacy compatibility - create a simple class for backward compatibility
-class FastqReadLegacy:
-    """Legacy FastqRead class for backward compatibility."""
-    
-    def __init__(self, qname: str, seq: str, qual: str):
-        self.qname = qname
-        self.seq = seq
-        self.qual = qual
-        self.name = qname  # Alias for compatibility
-        self.sequence = seq  # Alias for compatibility
-        self.quality = qual  # Alias for compatibility
-        self.length = len(seq)  # Alias for compatibility
-    
-    def __repr__(self):
-        return f"FastqRead(qname='{self.qname}', seq_len={len(self.seq)}, qual_len={len(self.qual)})"
