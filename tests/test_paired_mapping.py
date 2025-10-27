@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script for paired-end mapping using bwap.
+Test script for paired-end mapping using bwamem.
 Reads FASTQ files and performs paired-end alignment.
 """
 
@@ -9,10 +9,10 @@ import os
 import tempfile
 from pathlib import Path
 
-# Add parent directory to path to import bwap
+# Add parent directory to path to import bwamem
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import bwap
+import bwamem
 import pytest
 from create_demo_files import create_demo_files
 
@@ -20,7 +20,7 @@ from create_demo_files import create_demo_files
 def test_paired_end_mapping():
     """Test complete paired-end mapping workflow."""
     
-    print("🧬 Testing Paired-End Mapping with bwap")
+    print("🧬 Testing Paired-End Mapping with bwamem")
     print("=" * 50)
     
     # Create demo files
@@ -40,7 +40,7 @@ def test_paired_end_mapping():
     # Step 1: Build BWA index
     print("\n🔨 Building BWA index...")
     try:
-        indexer = bwap.BwaIndexer()
+        indexer = bwamem.BwaIndexer()
         index_path = indexer.build_index(ref_file, "tests/demo_index/demo_index")
         print(f"✅ Index built successfully: {index_path}")
     except Exception as e:
@@ -49,7 +49,7 @@ def test_paired_end_mapping():
     # Step 2: Initialize aligner
     print("\n🎯 Initializing BWA aligner...")
     try:
-        aligner = bwap.BwaAligner(index_path)
+        aligner = bwamem.BwaAligner(index_path)
         print("✅ Aligner initialized successfully")
     except Exception as e:
         pytest.fail(f"Failed to initialize aligner: {e}")
@@ -59,7 +59,7 @@ def test_paired_end_mapping():
     
     try:
         # Read paired FASTQ files
-        paired_reads = list(bwap.read_paired_fastq(r1_file, r2_file))
+        paired_reads = list(bwamem.read_paired_fastq(r1_file, r2_file))
         print(f"✅ Read {len(paired_reads)} paired reads")
         
         # Process each pair
@@ -73,7 +73,7 @@ def test_paired_end_mapping():
                     seq2=read2.seq,
                 )
                 
-                if isinstance(result, bwap.PairedAlignment):
+                if isinstance(result, bwamem.PairedAlignment):
                     print(f"✅ Paired alignment successful!")
                     print(f"   Read 1: {result.read1}")
                     print(f"   Read 2: {result.read2}")
@@ -106,11 +106,11 @@ def test_single_end_mapping():
     
     try:
         # Read single FASTQ file
-        reads = list(bwap.read_fastq("tests/demo_reads_R1.fastq"))
+        reads = list(bwamem.read_fastq("tests/demo_reads_R1.fastq"))
         print(f"✅ Read {len(reads)} single reads")
         
         # Initialize aligner (reuse index from previous test)
-        aligner = bwap.BwaAligner("tests/demo_index/demo_index")
+        aligner = bwamem.BwaAligner("tests/demo_index/demo_index")
         
         # Process first read
         read = reads[0]
@@ -121,7 +121,7 @@ def test_single_end_mapping():
         assert len(results) >= 0
         if results:
             aln = results[0]
-            assert isinstance(aln, bwap.Alignment)
+            assert isinstance(aln, bwamem.Alignment)
             print(f"✅ Single alignment successful!")
             print(f"   Result: {aln}")
             if aln.cigar:

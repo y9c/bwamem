@@ -13,7 +13,7 @@ import sphinx_rtd_theme
 
 
 # General information about the project.
-__pkg_name__ = u'bwapy'
+__pkg_name__ = u'bwamem'
 project = __pkg_name__.capitalize()
 copyright = u'2017, Oxford Nanopore Technologies'
 

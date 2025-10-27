@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel", "cffi"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bwap"
+name = "bwamem"
 version = "0.0.1"
 description = "Bindings to bwa aligner"
 readme = "README.md"
@@ -49,19 +49,19 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yech1990/bwap"
-Repository = "https://github.com/yech1990/bwap"
-Documentation = "https://yech1990.github.io/bwap/"
-"Bug Tracker" = "https://github.com/yech1990/bwap/issues"
+Homepage = "https://github.com/y9c/bwamem"
+Repository = "https://github.com/y9c/bwamem"
+Documentation = "https://y9c.github.io/bwamem/"
+"Bug Tracker" = "https://github.com/y9c/bwamem/issues"
 
 [project.scripts]
-bwamempy = "bwap.libbwa:main"
+bwamempy = "bwamem.libbwa:main"
 
 [tool.setuptools]
-packages = ["bwap"]
+packages = ["bwamem"]
 
 [tool.setuptools.package-data]
-bwap = []
+bwamem = []
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.test", "*.test.*", "test.*", "test"]
@@ -89,7 +89,7 @@ extend-exclude = '''
 profile = "black"
 multi_line_output = 3
 line_length = 88
-known_first_party = ["bwapy"]
+known_first_party = ["bwamem"]
 
 [tool.mypy]
 python_version = "3.8"

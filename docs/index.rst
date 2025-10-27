@@ -1,5 +1,5 @@
-Welcome to bwapy's documentation!
-==================================
+Welcome to bwamem's documentation!
+===================================
 
 Python bindings to `bwa mem` aligner; sufficient to load and index and perform
 alignments of sequences to the index to obtain basic statistics.
@@ -20,8 +20,8 @@ therefore run:
 
 .. code-block:: bash
 
-    git clone --recursive https://github.com/nanoporetech/bwapy.git
-    cd bwapy
+    git clone --recursive https://github.com/y9c/bwamem.git
+    cd bwamem
     make bwa/libbwa.a 
     python setup.py install
 
@@ -35,7 +35,7 @@ alignments of sequences given as strings:
 
 .. code-block:: python
 
-    from bwapy import BwaAligner
+    from bwamem import BwaAligner
     index = 'path/to/index' # the path given to bwa index
     seq = 'ACGATCGCGATCGA'
 
@@ -56,7 +56,7 @@ Alignment parameters can be given as they are on the `bwa mem` command line:
 
 .. code-block:: python
 
-    from bwapy import BwaAligner
+    from bwamem import BwaAligner
     index = 'path/to/index'
     options = '-x ont2d -A 1 -B 0'
     aligner = BwaAligner(index, options=options)
@@ -78,7 +78,7 @@ Full API reference
 .. toctree::
    :maxdepth: 3
       
-   bwapy
+   bwamem
 
 Indices and tables
 ------------------

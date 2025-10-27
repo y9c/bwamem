@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, master]
     paths:
-      - 'bwap/**'
+      - 'bwamem/**'
       - 'bwa/**'
       - 'pyproject.toml'
   pull_request:
@@ -41,7 +41,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest tests/ -v --cov=bwap --cov-report=xml
+          pytest tests/ -v --cov=bwamem --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3

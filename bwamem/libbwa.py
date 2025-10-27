@@ -322,7 +322,7 @@ class BwaAligner(object):
         if self.index == ffi.NULL:
             raise ValueError('Failed to load bwa index.')
 
-        argv = ['bwapy'] + (merged_options.split() if merged_options else [])
+        argv = ['bwamem'] + (merged_options.split() if merged_options else [])
         argc = len(argv)
         self.opt = libbwa.get_opts(argc,
             [ffi.new('char[]', x.encode()) for x in argv],

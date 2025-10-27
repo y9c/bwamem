@@ -1,5 +1,5 @@
-bwap
-====
+bwamem
+======
 
 Python bindings to `bwa mem` aligner; sufficient to load and index and perform
 alignments of sequences to the index to obtain basic statistics.
@@ -7,7 +7,7 @@ alignments of sequences to the index to obtain basic statistics.
 These python bindings are licensed under Mozilla Public License 2.0, bwa is licenced
 under GNU General Public License v3.0.
 
-Documentation can be found at https://yech1990.github.io/bwap/.
+Documentation can be found at https://y9c.github.io/bwamem/.
 
 Installation
 ------------
@@ -20,8 +20,8 @@ directory before running. This can be performed via the `libbwa.a` target, which
 makes some amendments to the bwa/Makefile. To build and install the package one should
 therefore run:
 
-    git clone --recursive https://github.com/yech1990/bwap.git
-    cd bwap
+    git clone --recursive https://github.com/y9c/bwamem.git
+    cd bwamem
     make bwa/libbwa.a 
     python setup.py install
 
@@ -33,7 +33,7 @@ The `BwaIndexer` class provides a pythonic interface to build BWA indexes from
 FASTA files. It supports different BWT construction algorithms:
 
 ```python
-from bwap import BwaIndexer
+from bwamem import BwaIndexer
 
 # Create indexer with default settings (auto algorithm)
 indexer = BwaIndexer()
@@ -65,7 +65,7 @@ alignments of sequences given as strings.
 For single-end reads, use the `align()` method with one sequence:
 
 ```python
-from bwap import BwaAligner, Alignment
+from bwamem import BwaAligner, Alignment
 index = 'path/to/index' # the path given to bwa index
 seq = 'ACGATCGCGATCGA'
 
@@ -81,7 +81,7 @@ for aln in alignments:
 For paired-end reads, use the `align()` method with two sequences:
 
 ```python
-from bwap import BwaAligner, PairedAlignment
+from bwamem import BwaAligner, PairedAlignment
 index = 'path/to/index'
 read1 = 'ACGATCGCGATCGA'
 read2 = 'TTCGATCGATCGAT'
@@ -121,7 +121,7 @@ PairedAlignment(read1=Alignment(...), read2=Alignment(...), is_proper_pair=True,
 Alignment parameters can be given as they are on the `bwa mem` command line:
 
 ```python
-from bwap import BwaAligner
+from bwamem import BwaAligner
 index = 'path/to/index'
 options = '-x ont2d -A 1 -B 0'
 aligner = BwaAligner(index, options=options)
@@ -135,7 +135,7 @@ Complete Workflow Example
 Here's a complete example showing how to build an index and perform both single-end and paired-end alignments:
 
 ```python
-from bwap import BwaIndexer, BwaAligner, Alignment, PairedAlignment
+from bwamem import BwaIndexer, BwaAligner, Alignment, PairedAlignment
 
 # Step 1: Build index from FASTA file
 indexer = BwaIndexer(algorithm='auto')

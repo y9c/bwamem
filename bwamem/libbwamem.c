@@ -26,7 +26,7 @@ static PyMethodDef module_functions[] = {
           ob = Py_InitModule3(name, methods, doc);
 #endif
 
-MOD_INIT(bwapy)
+MOD_INIT(bwamemy)
 {
     PyObject *m;
 

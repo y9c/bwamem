@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Setup script for bwapy package.
+Setup script for bwamem package.
 This is a minimal setup.py that works with pyproject.toml for C extensions.
 """
 
@@ -24,7 +24,7 @@ class build_ext(_build_ext):
 extensions = [
     Extension(
         'bwalib',
-        sources=['bwap/libbwapy.c', 'bwap/memopts.c'],
+        sources=['bwamem/libbwamem.c', 'bwamem/memopts.c'],
         include_dirs=['bwa'],
         extra_compile_args=['-pedantic', '-Wall', '-std=c99', '-march=native', '-ffast-math', '-DUSE_SSE2', '-DNDEBUG'],
         libraries=['z'],

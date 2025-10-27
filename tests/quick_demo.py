@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from bwap import Alignment, BwaAligner, BwaIndexer, PairedAlignment
+from bwamem import Alignment, BwaAligner, BwaIndexer, PairedAlignment
 
 indexer = BwaIndexer()
 # Available algorithms: {['auto', 'rb2', 'bwtsw', 'is']}

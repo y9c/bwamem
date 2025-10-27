@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Example usage of the bwap package with both single-end and paired-end alignment support.
+Example usage of the bwamem package with both single-end and paired-end alignment support.
 """
 
-from bwap import BwaAligner, BwaIndexer, Alignment, PairedAlignment
+from bwamem import BwaAligner, BwaIndexer, Alignment, PairedAlignment
 import os
 
 def main():
-    """Demonstrate basic usage of bwap with SE and PE alignment."""
-    print("Bwap - Python bindings for BWA aligner")
+    """Demonstrate basic usage of bwamem with SE and PE alignment."""
+    print("Bwamem - Python bindings for BWA aligner")
     print("=====================================")
     print("Supports both Single-End (SE) and Paired-End (PE) alignment")
     

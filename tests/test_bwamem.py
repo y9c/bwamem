@@ -1,68 +1,62 @@
-"""Basic tests for bwap package."""
+"""Basic tests for bwamem package."""
 
 import pytest
-import bwap
-
-
-def test_version():
-    """Test that version is accessible."""
-    assert hasattr(bwap, '__version__')
-    assert bwap.__version__ == '0.0.1'
+import bwamem
 
 
 def test_bwa_aligner_import():
     """Test that BwaAligner can be imported."""
-    assert hasattr(bwap, 'BwaAligner')
-    assert callable(bwap.BwaAligner)
+    assert hasattr(bwamem, 'BwaAligner')
+    assert callable(bwamem.BwaAligner)
 
 
 def test_bwa_aligner_initialization():
     """Test BwaAligner initialization with invalid index."""
     # This should raise an error since we don't have a valid BWA index
     with pytest.raises(ValueError, match="Failed to load bwa index"):
-        bwap.BwaAligner("nonexistent_index")
+        bwamem.BwaAligner("nonexistent_index")
 
 
 def test_bwa_indexer_import():
     """Test that BwaIndexer can be imported."""
-    assert hasattr(bwap, 'BwaIndexer')
-    assert callable(bwap.BwaIndexer)
+    assert hasattr(bwamem, 'BwaIndexer')
+    assert callable(bwamem.BwaIndexer)
 
 
 def test_bwa_indexer_initialization():
     """Test BwaIndexer initialization with different algorithms."""
     # Test default initialization
-    indexer = bwap.BwaIndexer()
+    indexer = bwamem.BwaIndexer()
     assert indexer.algorithm == 'auto'
     assert indexer.block_size == 10000000
     
     # Test with specific algorithm
-    indexer = bwap.BwaIndexer(algorithm='is')
+    indexer = bwamem.BwaIndexer(algorithm='is')
     assert indexer.algorithm == 'is'
     
     # Test with invalid algorithm
     with pytest.raises(ValueError, match="Unknown algorithm"):
-        bwap.BwaIndexer(algorithm='invalid')
+        bwamem.BwaIndexer(algorithm='invalid')
 
 
 def test_bwa_indexer_algorithm_constants():
     """Test BwaIndexer algorithm constants."""
-    assert bwap.BwaIndexer.BWTALGO_AUTO == 0
-    assert bwap.BwaIndexer.BWTALGO_RB2 == 1
-    assert bwap.BwaIndexer.BWTALGO_BWTSW == 2
-    assert bwap.BwaIndexer.BWTALGO_IS == 3
+    assert bwamem.BwaIndexer.BWTALGO_AUTO == 0
+    assert bwamem.BwaIndexer.BWTALGO_RB2 == 1
+    assert bwamem.BwaIndexer.BWTALGO_BWTSW == 2
+    assert bwamem.BwaIndexer.BWTALGO_IS == 3
 
 
 def test_bwa_indexer_build_index_file_not_found():
     """Test BwaIndexer build_index with non-existent file."""
-    indexer = bwap.BwaIndexer()
+    indexer = bwamem.BwaIndexer()
     with pytest.raises(FileNotFoundError, match="FASTA file not found"):
         indexer.build_index("nonexistent.fasta")
 
 
 def test_align_function_signature():
     """Test that the new align function has the correct signature."""
-    from bwap import BwaAligner, Alignment, PairedAlignment
+    from bwamem import BwaAligner, Alignment, PairedAlignment
     
     # Test that the classes exist
     assert Alignment is not None
@@ -88,7 +82,7 @@ def test_align_function_signature():
 
 def test_data_structures():
     """Test that the new data structures work correctly."""
-    from bwap import Alignment, PairedAlignment
+    from bwamem import Alignment, PairedAlignment
     
     # Test Alignment
     se_aln = Alignment(
@@ -127,7 +121,7 @@ def test_data_structures():
 
 def test_align_method_availability():
     """Test that the align method is available and has correct signature."""
-    from bwap import BwaAligner
+    from bwamem import BwaAligner
     import inspect
     
     # Test that align method exists
@@ -153,7 +147,7 @@ def test_align_method_availability():
 
 def test_align_method_parameter_types():
     """Test that the align method accepts correct parameter types."""
-    from bwap import BwaAligner
+    from bwamem import BwaAligner
     import inspect
     
     sig = inspect.signature(BwaAligner.align)
@@ -166,7 +160,7 @@ def test_align_method_parameter_types():
 
 def test_single_end_vs_paired_end_usage():
     """Test the different usage patterns for SE vs PE alignment."""
-    from bwap import BwaAligner, Alignment, PairedAlignment
+    from bwamem import BwaAligner, Alignment, PairedAlignment
     import inspect
     
     # Test that we can call align with just one sequence (SE)
@@ -192,7 +186,7 @@ def test_single_end_vs_paired_end_usage():
 
 def test_data_structure_fields():
     """Test that data structures have the correct fields."""
-    from bwap import Alignment, PairedAlignment
+    from bwamem import Alignment, PairedAlignment
     
     # Test Alignment fields
     expected_se_fields = ('rname', 'orient', 'pos', 'mapq', 'cigar', 'NM', 'score', 'is_primary')
