@@ -72,7 +72,9 @@ extensions = [
             "-DNDEBUG",
         ],
         extra_link_args=[
+            "-Wl,--whole-archive",
             os.path.join("bwa", "libbwa.a"),
+            "-Wl,--no-whole-archive",
             "-lz",
         ],
     )
