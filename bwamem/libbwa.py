@@ -4,12 +4,29 @@ import importlib
 import importlib.util
 import os
 import sys  # noqa: F401
+from contextlib import contextmanager
 
 from cffi import FFI
 
 ffi = FFI()
 
 """High-level interface to bwa (mem) aligner."""
+
+
+@contextmanager
+def suppress_stderr():
+    """Context manager to suppress stderr output."""
+    # Save the original stderr file descriptor
+    old_stderr_fd = os.dup(2)
+    try:
+        # Redirect stderr to /dev/null
+        with open(os.devnull, "w") as devnull:
+            os.dup2(devnull.fileno(), 2)
+            yield
+    finally:
+        # Restore the original stderr
+        os.dup2(old_stderr_fd, 2)
+        os.close(old_stderr_fd)
 
 
 def get_shared_lib(name):
@@ -478,7 +495,8 @@ class BwaAligner(object):
                 pes[1].low = int(eff_insert_min)
         else:
             # Infer insert size from data
-            libbwa.mem_pestat(self.opt, self.index.bns.l_pac, 2, regs_array, pes)
+            with suppress_stderr():
+                libbwa.mem_pestat(self.opt, self.index.bns.l_pac, 2, regs_array, pes)
 
         # Skip mem_sam_pe; construct paired alignments from regions
 
