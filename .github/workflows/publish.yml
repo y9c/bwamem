@@ -1,16 +1,18 @@
+# This workflow will upload a Python Package using Twine when a release is created
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
+
 name: Upload Python Package
 
 on:
   push:
-    branches: [main, master]
     paths:
       - 'pyproject.toml'
-  release:
-    types: [published]
+    branches:
+      - main # or your default branch
+      - master
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   build_wheels:
@@ -18,53 +20,24 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Build BWA static library (Linux only)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y zlib1g-dev build-essential
-          make bwa/libbwa.a
-
-      - name: Build BWA static library (macOS only)
-        if: matrix.os == 'macos-latest'
-        run: |
-          brew install zlib
-          make bwa/libbwa.a
-
-      - name: Build BWA static library (Windows only)
-        if: matrix.os == 'windows-latest'
-        run: |
-          # Windows build would need different approach
-          # For now, we'll skip Windows builds
-          echo "Windows build not implemented yet"
-
+      
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.16.2
+        uses: pypa/cibuildwheel@v2.21.3
         env:
-          CIBW_BUILD: cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*
-          CIBW_SKIP: "*-win32 *-manylinux_i686 *-musllinux_i686"
-          CIBW_BEFORE_BUILD: |
-            if [[ "$RUNNER_OS" == "Linux" ]]; then
-              sudo apt-get update
-              sudo apt-get install -y zlib1g-dev build-essential
-              make bwa/libbwa.a
-            elif [[ "$RUNNER_OS" == "macOS" ]]; then
-              brew install zlib
-              make bwa/libbwa.a
-            fi
-          CIBW_ENVIRONMENT: |
-            CIBW_BEFORE_BUILD_LINUX="sudo apt-get update && sudo apt-get install -y zlib1g-dev build-essential && make bwa/libbwa.a"
-            CIBW_BEFORE_BUILD_MACOS="brew install zlib && make bwa/libbwa.a"
-
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
+          CIBW_BUILD: "cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*"
+          CIBW_SKIP: "*-musllinux_* *-manylinux_i686"
+          CIBW_ARCHS_LINUX: "x86_64"
+          CIBW_ARCHS_MACOS: "x86_64 arm64"
+          CIBW_BEFORE_BUILD_LINUX: "sudo apt-get update && sudo apt-get install -y zlib1g-dev build-essential && make bwa/libbwa.a"
+          CIBW_BEFORE_BUILD_MACOS: "brew install zlib && make bwa/libbwa.a"
+      
+      - uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
           path: ./wheelhouse/*.whl
 
   build_sdist:
@@ -72,61 +45,45 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
-
+          python-version: '3.x'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+      
       - name: Build BWA static library
         run: |
           sudo apt-get update
           sudo apt-get install -y zlib1g-dev build-essential
           make bwa/libbwa.a
-
-      - name: Install dependencies
-        run: |
-          uv sync --dev
-
-      - name: Build source distribution
-        run: uv build --sdist
-
-      - name: Upload sdist
-        uses: actions/upload-artifact@v4
+      
+      - name: Build sdist
+        run: python -m build --sdist
+      
+      - uses: actions/upload-artifact@v4
         with:
-          name: sdist
-          path: ./dist/*.tar.gz
+          name: cibw-sdist
+          path: dist/*.tar.gz
 
-  upload:
+  upload_pypi:
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
     steps:
-      - name: Download wheels
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: wheels-ubuntu-latest
+          pattern: cibw-*
           path: dist
-
-      - name: Download macOS wheels
-        uses: actions/download-artifact@v4
-        with:
-          name: wheels-macos-latest
-          path: dist
-
-      - name: Download sdist
-        uses: actions/download-artifact@v4
-        with:
-          name: sdist
-          path: dist
-
-      - name: Publish to PyPI
+          merge-multiple: true
+      
+      - name: Publish package
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
           password: ${{ secrets.PYPI_API_TOKEN }}
-          skip-existing: true
