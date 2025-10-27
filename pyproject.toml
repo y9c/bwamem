@@ -1,0 +1,124 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "cffi"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bwap"
+version = "0.0.1"
+description = "Bindings to bwa aligner"
+readme = "README.md"
+license = "MPL-2.0"
+authors = [
+    {name = "Chang Ye", email = "yech1990@gmail.com"}
+]
+maintainers = [
+    {name = "Chang Ye", email = "yech1990@gmail.com"}
+]
+keywords = ["bioinformatics", "alignment", "bwa", "genomics"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: C",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "cffi>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov",
+    "black",
+    "isort",
+    "flake8",
+    "mypy",
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+]
+
+[project.urls]
+Homepage = "https://github.com/yech1990/bwap"
+Repository = "https://github.com/yech1990/bwap"
+Documentation = "https://yech1990.github.io/bwap/"
+"Bug Tracker" = "https://github.com/yech1990/bwap/issues"
+
+[project.scripts]
+bwamempy = "bwap.libbwa:main"
+
+[tool.setuptools]
+packages = ["bwap"]
+
+[tool.setuptools.package-data]
+bwap = []
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.test", "*.test.*", "test.*", "test"]
+
+# Tool configurations
+[tool.black]
+line-length = 88
+target-version = ['py310', 'py311', 'py312', 'py313', 'py314']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["bwapy"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[dependency-groups]
+dev = [
+    "black>=24.8.0",
+    "flake8>=5.0.4",
+    "isort>=5.13.2",
+    "mypy>=1.14.1",
+    "pytest>=8.3.5",
+    "pytest-cov>=5.0.0",
+]

@@ -1,0 +1,11 @@
+include README.md
+include LICENSE.md
+include pyproject.toml
+include setup.py
+include MANIFEST.in
+recursive-include bwa *.h *.c *.a *.o
+recursive-include bwap *.py *.c
+recursive-include tests *.py
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .git*
