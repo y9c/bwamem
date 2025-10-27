@@ -2,6 +2,8 @@
 requires = ["setuptools>=61.0", "wheel", "cffi"]
 build-backend = "setuptools.build_meta"
 
+# Performance-optimized build configuration for Linux platform
+
 [project]
 name = "bwamem"
 version = "0.0.1"
