@@ -17,13 +17,16 @@ class build_ext(_build_ext):
         self.build_static_library()
 
         # Remove '-Wl,--exclude-libs,ALL' so symbols from static libs are exported
-        comp = getattr(self, "compiler", None)
-        if comp and hasattr(comp, "linker_so"):
-            comp.linker_so = [
-                arg
-                for arg in comp.linker_so
-                if not (isinstance(arg, str) and "--exclude-libs" in arg)
-            ]
+        # This is only needed on Linux with GNU ld
+        import platform
+        if platform.system() == "Linux":
+            comp = getattr(self, "compiler", None)
+            if comp and hasattr(comp, "linker_so"):
+                comp.linker_so = [
+                    arg
+                    for arg in comp.linker_so
+                    if not (isinstance(arg, str) and "--exclude-libs" in arg)
+                ]
         super().build_extensions()
 
     def build_static_library(self):
@@ -60,15 +63,12 @@ extensions = [
             "-pedantic",
             "-Wall",
             "-std=c99",
-            "-march=native",
             "-ffast-math",
             "-DUSE_SSE2",
             "-DNDEBUG",
         ],
         extra_link_args=[
-            "-Wl,--whole-archive",
             os.path.join("bwa", "libbwa.a"),
-            "-Wl,--no-whole-archive",
             "-lz",
         ],
     )
