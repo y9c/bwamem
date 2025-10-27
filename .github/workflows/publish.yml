@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -31,9 +31,7 @@ jobs:
           CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
           CIBW_SKIP: "*-musllinux_* *-manylinux_i686"
           CIBW_ARCHS_LINUX: "x86_64"
-          CIBW_ARCHS_MACOS: "x86_64 arm64"
           CIBW_BEFORE_BUILD_LINUX: "yum install -y zlib-devel && make bwa/libbwa.a"
-          CIBW_BEFORE_BUILD_MACOS: "brew install zlib && make bwa/libbwa.a"
       
       - uses: actions/upload-artifact@v4
         with:
