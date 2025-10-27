@@ -91,6 +91,7 @@ def main():
                 alignments = aligner.align(seq1, seq2)
 
                 if alignments:
+                    print(alignments)
                     mapped_pairs += 1
                     print(f"Pair {total_pairs}: {len(alignments)} alignment(s)")
 
@@ -100,11 +101,11 @@ def main():
                             # Paired alignment
                             print(f"  Alignment {i + 1}:")
                             print(
-                                f"    Read1: {aln.read1.chromosome}:{aln.read1.position} {aln.read1.strand} "
+                                f"    Read1: {aln.read1.rname}:{aln.read1.pos} {aln.read1.orient} "
                                 f"mapq={aln.read1.mapq} cigar={aln.read1.cigar}"
                             )
                             print(
-                                f"    Read2: {aln.read2.chromosome}:{aln.read2.position} {aln.read2.strand} "
+                                f"    Read2: {aln.read2.rname}:{aln.read2.pos} {aln.read2.orient} "
                                 f"mapq={aln.read2.mapq} cigar={aln.read2.cigar}"
                             )
                             print(f"    Proper pair: {aln.is_proper_pair}")
@@ -113,7 +114,7 @@ def main():
                         else:
                             # Single alignment
                             print(
-                                f"  Alignment {i + 1}: {aln.chromosome}:{aln.position} {aln.strand} "
+                                f"  Alignment {i + 1}: {aln.rname}:{aln.pos} {aln.orient} "
                                 f"mapq={aln.mapq} cigar={aln.cigar}"
                             )
                 else:
