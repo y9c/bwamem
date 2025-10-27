@@ -63,13 +63,13 @@ def test_paired_end_mapping():
 
         # Process each pair
         for i, (read1, read2) in enumerate(paired_reads):
-            print(f"\n--- Processing pair {i + 1}: {read1.qname} ---")
+            print(f"\n--- Processing pair {i + 1}: {read1.name} ---")
 
             # Perform paired-end alignment
             try:
                 result = aligner.align(
-                    seq1=read1.seq,
-                    seq2=read2.seq,
+                    seq1=read1.sequence,
+                    seq2=read2.sequence,
                 )
 
                 if isinstance(result, bwamem.PairedAlignment):
@@ -113,9 +113,9 @@ def test_single_end_mapping():
 
         # Process first read
         read = reads[0]
-        print(f"\n--- Processing read: {read.qname} ---")
+        print(f"\n--- Processing read: {read.name} ---")
 
-        results = aligner.align(seq1=read.seq)
+        results = aligner.align(seq1=read.sequence)
         assert isinstance(results, tuple)
         assert len(results) >= 0
         if results:
