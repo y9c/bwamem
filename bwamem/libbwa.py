@@ -247,10 +247,26 @@ ffi.cdef("""
   ///////////////////
   // FASTQ reading functions
   //
+  // kstring_t structure
+  typedef struct {
+    size_t l, m;
+    char *s;
+  } kstring_t;
+  
+  // kseq_t structure
+  typedef struct {
+    kstring_t name, comment, seq, qual;
+    int last_char;
+    void *f;
+  } kseq_t;
+  
+  // File opening functions
+  void *err_xzopen_core(const char *func, const char *fn, const char *mode);
+  int gzclose(void *file);
   // kseq functions for FASTQ reading
-  void *kseq_init(void *fp);
-  int kseq_read(void *ks);
-  void kseq_destroy(void *ks);
+  kseq_t *kseq_init(void *fp);
+  int kseq_read(kseq_t *ks);
+  void kseq_destroy(kseq_t *ks);
   // bseq functions for batch reading
   bseq1_t *bseq_read(int chunk_size, int *n_, void *ks1_, void *ks2_);
   

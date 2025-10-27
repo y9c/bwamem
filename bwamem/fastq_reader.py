@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-High-performance FASTQ reader optimized for speed.
+High-performance FASTQ reader using BWA's kseq library directly.
 
-This module provides fast reading of FASTQ files using optimized Python
-with minimal overhead, similar to BWA's kseq approach.
+This module provides the fastest possible FASTQ reading by using BWA's
+optimized C implementation directly through cffi.
 """
 
-import gzip
+import os
 from typing import Iterator, Tuple, Optional, Union
 from collections import namedtuple
+
+from .libbwa import libbwa, ffi
 
 # Use namedtuple for better performance
 FastqRead = namedtuple('FastqRead', ['name', 'comment', 'sequence', 'quality', 'length'])
@@ -16,10 +18,10 @@ FastqRead = namedtuple('FastqRead', ['name', 'comment', 'sequence', 'quality', '
 
 class FastqReader:
     """
-    High-performance FASTQ reader.
+    High-performance FASTQ reader using BWA's kseq library directly.
     
-    This class provides fast reading of FASTQ files, both single-end and paired-end,
-    using optimized Python implementation.
+    This class provides the fastest possible reading of FASTQ files by using
+    BWA's optimized C implementation directly.
     """
     
     def __init__(self, file1: str, file2: Optional[str] = None):
@@ -34,20 +36,36 @@ class FastqReader:
         self.file2 = file2
         self.is_paired = file2 is not None
         
-        # Open files with appropriate compression handling
-        self.fp1 = self._open_file(file1)
+        # Open files using BWA's err_xzopen_core (handles gzip automatically)
+        self.fp1 = libbwa.err_xzopen_core(b"FastqReader", file1.encode('utf-8'), b"r")
+        if not self.fp1:
+            raise IOError(f"Failed to open file: {file1}")
+        
         self.fp2 = None
         if self.is_paired:
-            self.fp2 = self._open_file(file2)
+            self.fp2 = libbwa.err_xzopen_core(b"FastqReader", file2.encode('utf-8'), b"r")
+            if not self.fp2:
+                libbwa.gzclose(self.fp1)
+                raise IOError(f"Failed to open file: {file2}")
+        
+        # Initialize kseq readers
+        self.ks1 = libbwa.kseq_init(self.fp1)
+        if not self.ks1:
+            libbwa.gzclose(self.fp1)
+            if self.fp2:
+                libbwa.gzclose(self.fp2)
+            raise IOError("Failed to initialize kseq for first file")
+        
+        self.ks2 = None
+        if self.is_paired:
+            self.ks2 = libbwa.kseq_init(self.fp2)
+            if not self.ks2:
+                libbwa.kseq_destroy(self.ks1)
+                libbwa.gzclose(self.fp1)
+                libbwa.gzclose(self.fp2)
+                raise IOError("Failed to initialize kseq for second file")
         
         self._closed = False
-    
-    def _open_file(self, file_path: str):
-        """Open file with appropriate compression handling."""
-        if file_path.endswith('.gz'):
-            return gzip.open(file_path, 'rt')
-        else:
-            return open(file_path, 'r')
     
     def read(self) -> Union[FastqRead, Tuple[FastqRead, FastqRead], None]:
         """
@@ -62,52 +80,63 @@ class FastqReader:
         
         try:
             if self.is_paired:
-                # Read paired sequences
-                line1 = self.fp1.readline()
-                line2 = self.fp2.readline()
+                # Use bseq_read for paired-end processing
+                n = ffi.new("int *")
+                seqs = libbwa.bseq_read(2, n, self.ks1, self.ks2)
                 
-                if not line1 or not line2:
+                if not seqs or n[0] < 2:
+                    if seqs:
+                        libbwa.free(seqs)
                     return None
                 
-                # Parse R1
-                name1 = line1.strip()[1:]  # Remove '@'
-                seq1 = self.fp1.readline().strip()
-                self.fp1.readline()  # Skip '+'
-                qual1 = self.fp1.readline().strip()
-                
-                # Parse R2
-                name2 = line2.strip()[1:]  # Remove '@'
-                seq2 = self.fp2.readline().strip()
-                self.fp2.readline()  # Skip '+'
-                qual2 = self.fp2.readline().strip()
-                
-                read1 = FastqRead(name1, "", seq1, qual1, len(seq1))
-                read2 = FastqRead(name2, "", seq2, qual2, len(seq2))
-                
-                return (read1, read2)
+                # Paired-end: return first two sequences
+                seq1 = self._bseq_to_fastq_read(seqs[0])
+                seq2 = self._bseq_to_fastq_read(seqs[1])
+                libbwa.free(seqs)
+                return (seq1, seq2)
             else:
-                # Read single sequence
-                line = self.fp1.readline()
-                if not line:
+                # Single-end: use kseq_read directly
+                ret = libbwa.kseq_read(self.ks1)
+                if ret < 0:
                     return None
                 
-                name = line.strip()[1:]  # Remove '@'
-                seq = self.fp1.readline().strip()
-                self.fp1.readline()  # Skip '+'
-                qual = self.fp1.readline().strip()
-                
-                return FastqRead(name, "", seq, qual, len(seq))
+                # Convert kseq_t to FastqRead
+                return self._kseq_to_fastq_read(self.ks1)
                 
         except Exception:
             return None
     
+    def _bseq_to_fastq_read(self, bseq):
+        """Convert bseq1_t to FastqRead."""
+        # Access bseq1_t fields
+        name = ffi.string(bseq.name).decode('utf-8') if bseq.name else ""
+        comment = ffi.string(bseq.comment).decode('utf-8') if bseq.comment else ""
+        seq = ffi.string(bseq.seq).decode('utf-8') if bseq.seq else ""
+        qual = ffi.string(bseq.qual).decode('utf-8') if bseq.qual else ""
+        length = bseq.l_seq
+        
+        return FastqRead(name, comment, seq, qual, length)
+    
+    def _kseq_to_fastq_read(self, ks):
+        """Convert kseq_t to FastqRead."""
+        # Access kseq_t fields (kstring_t structures)
+        name = ffi.string(ks.name.s).decode('utf-8') if ks.name.s else ""
+        comment = ffi.string(ks.comment.s).decode('utf-8') if ks.comment.s else ""
+        seq = ffi.string(ks.seq.s).decode('utf-8') if ks.seq.s else ""
+        qual = ffi.string(ks.qual.s).decode('utf-8') if ks.qual.s else ""
+        length = ks.seq.l
+        
+        return FastqRead(name, comment, seq, qual, length)
+    
     def close(self):
         """Close the FASTQ files."""
         if not self._closed:
-            if self.fp1:
-                self.fp1.close()
-            if self.fp2:
-                self.fp2.close()
+            if self.ks2:
+                libbwa.kseq_destroy(self.ks2)
+                libbwa.gzclose(self.fp2)
+            if self.ks1:
+                libbwa.kseq_destroy(self.ks1)
+                libbwa.gzclose(self.fp1)
             self._closed = True
     
     def __enter__(self):
@@ -132,7 +161,7 @@ class FastqReader:
 
 def read_fastq(file_path: str) -> Iterator[FastqRead]:
     """
-    Read single-end FASTQ file.
+    Read single-end FASTQ file using BWA C implementation.
     
     Args:
         file_path: Path to FASTQ file (supports .gz compression)
@@ -150,7 +179,7 @@ def read_fastq(file_path: str) -> Iterator[FastqRead]:
 
 def read_paired_fastq(file1: str, file2: str) -> Iterator[Tuple[FastqRead, FastqRead]]:
     """
-    Read paired-end FASTQ files.
+    Read paired-end FASTQ files using BWA C implementation.
     
     Args:
         file1: Path to R1 FASTQ file
