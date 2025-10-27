@@ -6,6 +6,7 @@ import os
 import sys  # noqa: F401
 
 from cffi import FFI
+
 ffi = FFI()
 
 """High-level interface to bwa (mem) aligner."""
@@ -37,7 +38,7 @@ def get_shared_lib(name):
     return library
 
 
-libbwa = get_shared_lib('bwalib')
+libbwa = get_shared_lib("bwalib")
 # Reduce noisy internal BWA logs (mem_pestat notices) for tiny demos
 try:
     libbwa.bwa_verbose = 0
@@ -233,23 +234,30 @@ ffi.cdef("""
 
 
 # Alignment result for single reads
-Alignment = namedtuple('Alignment', [
-    'rname', 'orient', 'pos', 'mapq', 'cigar', 'NM', 'score', 'is_primary'
-])
+Alignment = namedtuple(
+    "Alignment",
+    ["rname", "orient", "pos", "mapq", "cigar", "NM", "score", "is_primary"],
+)
 
 # Paired-end alignment result
-PairedAlignment = namedtuple('PairedAlignment', [
-    'read1', 'read2', 'is_proper_pair', 'insert_size'
-])
+PairedAlignment = namedtuple(
+    "PairedAlignment", ["read1", "read2", "is_proper_pair", "insert_size"]
+)
+
 
 class BwaAligner(object):
-    def __init__(self, index:str, options:str='', *,
-                 min_score: int | None = None,
-                 softclip_supplementary: bool | None = None,
-                 mark_secondary: bool | None = None,
-                 clip_penalties: tuple[int, int] | None = None,
-                 unpaired_penalty: int | None = None,
-                 insert_model: tuple | None = None):
+    def __init__(
+        self,
+        index: str,
+        options: str = "",
+        *,
+        min_score: int | None = None,
+        softclip_supplementary: bool | None = None,
+        mark_secondary: bool | None = None,
+        clip_penalties: tuple[int, int] | None = None,
+        unpaired_penalty: int | None = None,
+        insert_model: tuple | None = None,
+    ):
         """Interface to bwa mem alignment.
 
         :param index: bwa index base path.
@@ -265,26 +273,27 @@ class BwaAligner(object):
         self.index_base = index.encode()
         self._cigchar = "MIDSH"
 
-
         # Compose CLI-style options from explicit kwargs
         extra_opts: list[str] = []
         if softclip_supplementary:
-            extra_opts += ['-Y']
+            extra_opts += ["-Y"]
         if mark_secondary:
-            extra_opts += ['-M']
+            extra_opts += ["-M"]
         if clip_penalties is not None:
             a, b = clip_penalties
-            extra_opts += ['-L', f"{int(a)},{int(b)}"]
+            extra_opts += ["-L", f"{int(a)},{int(b)}"]
         if unpaired_penalty is not None:
-            extra_opts += ['-U', str(int(unpaired_penalty))]
+            extra_opts += ["-U", str(int(unpaired_penalty))]
         if min_score is not None:
-            extra_opts += ['-T', str(int(min_score))]
+            extra_opts += ["-T", str(int(min_score))]
         # Support -I mean,std,max[,min]
         self._insert_model = None
         if insert_model is not None:
             n = len(insert_model)
             if n < 1 or n > 4:
-                raise ValueError("insert_model must be (mean), (mean,std), (mean,std,max), or (mean,std,max,min)")
+                raise ValueError(
+                    "insert_model must be (mean), (mean,std), (mean,std,max), or (mean,std,max,min)"
+                )
             mean = float(insert_model[0])
             std = float(insert_model[1]) if n >= 2 else max(1.0, mean * 0.1)
             imax = int(insert_model[2]) if n >= 3 else int(mean + 4.0 * std + 0.499)
@@ -298,49 +307,49 @@ class BwaAligner(object):
                 i_arg = f"{mean},{std},{imax}"
             else:
                 i_arg = f"{mean},{std},{imax},{imin}"
-            extra_opts += ['-I', i_arg]
+            extra_opts += ["-I", i_arg]
             # Store normalized model for pairing logic
-            self._insert_model = (mean, std, imax) + ((imin,) if imin is not None else tuple())
+            self._insert_model = (mean, std, imax) + (
+                (imin,) if imin is not None else tuple()
+            )
 
         # Merge explicit kwargs options with provided options string
-        merged_options = ' '.join(extra_opts + (options.split() if options else []))
+        merged_options = " ".join(extra_opts + (options.split() if options else []))
 
         # Validate options against allowed set
-        valid_opts = ffi.string(libbwa.valid_opts).decode().replace(':', '')
+        valid_opts = ffi.string(libbwa.valid_opts).decode().replace(":", "")
         for opt in merged_options.split():
-            if opt[0] != '-':
+            if opt[0] != "-":
                 continue
             if opt[1] not in valid_opts:
                 raise ValueError(
                     "Option '{}' is not a valid option (allowed: {}).".format(
-                     opt, ' '.join(valid_opts)
-                ))
+                        opt, " ".join(valid_opts)
+                    )
+                )
 
         # we need to pass the index to the option parsing
         # TODO: clean up this requirement
         self.index = libbwa.bwa_idx_load_all(self.index_base)
         if self.index == ffi.NULL:
-            raise ValueError('Failed to load bwa index.')
+            raise ValueError("Failed to load bwa index.")
 
-        argv = ['bwamem'] + (merged_options.split() if merged_options else [])
+        argv = ["bwamem"] + (merged_options.split() if merged_options else [])
         argc = len(argv)
-        self.opt = libbwa.get_opts(argc,
-            [ffi.new('char[]', x.encode()) for x in argv],
-            self.index
+        self.opt = libbwa.get_opts(
+            argc, [ffi.new("char[]", x.encode()) for x in argv], self.index
         )
         if self.opt == ffi.NULL:
-            raise ValueError('Failed to parse options.')
-
+            raise ValueError("Failed to parse options.")
 
     def __del__(self):
-        if hasattr(self, 'index'):
+        if hasattr(self, "index"):
             try:
                 libbwa.bwa_idx_destroy(self.index)
             except (AttributeError, NameError):
                 # Function not available, skip cleanup
                 pass
         # No additional opt memory to free
-
 
     def align(self, seq1: str, seq2: str = None):
         """Align one or two sequences to the index.
@@ -361,40 +370,54 @@ class BwaAligner(object):
     def _align_single_end(self, seq: str):
         """Perform single-end alignment using the new BWA functions."""
         # Get alignment regions
-        regs = libbwa.mem_align1(self.opt, self.index.bwt, self.index.bns, self.index.pac, 
-                                len(seq), seq.encode())
-        
+        regs = libbwa.mem_align1(
+            self.opt,
+            self.index.bwt,
+            self.index.bns,
+            self.index.pac,
+            len(seq),
+            seq.encode(),
+        )
+
         if regs.n == 0:
             return tuple()
-        
+
         # Convert regions to alignments
         alignments = []
         for i in range(regs.n):
             if regs.a[i].score >= self.opt.T:  # Only keep alignments above threshold
-                aln_ptr = libbwa.mem_reg2aln_ptr(self.opt, self.index.bns, self.index.pac, 
-                                        len(seq), seq.encode(), ffi.addressof(regs.a[i]))
+                aln_ptr = libbwa.mem_reg2aln_ptr(
+                    self.opt,
+                    self.index.bns,
+                    self.index.pac,
+                    len(seq),
+                    seq.encode(),
+                    ffi.addressof(regs.a[i]),
+                )
                 if aln_ptr != ffi.NULL and aln_ptr.rid >= 0:  # Valid alignment
                     cigar = self._build_cigar(aln_ptr.cigar, aln_ptr.n_cigar)
                     alignment = Alignment(
-                        rname=ffi.string(self.index.bns.anns[aln_ptr.rid].name).decode(),
-                        orient='+-'[aln_ptr.is_rev],
+                        rname=ffi.string(
+                            self.index.bns.anns[aln_ptr.rid].name
+                        ).decode(),
+                        orient="+-"[aln_ptr.is_rev],
                         pos=aln_ptr.pos,
                         mapq=aln_ptr.mapq,
                         cigar=cigar,
                         NM=aln_ptr.NM,
                         score=regs.a[i].score,
-                        is_primary=(i == 0)
+                        is_primary=(i == 0),
                     )
                     alignments.append(alignment)
                     # Free dynamically allocated CIGAR and struct
                     if aln_ptr.cigar != ffi.NULL:
                         libbwa.free(aln_ptr.cigar)
                     libbwa.free(aln_ptr)
-        
+
         # Free the mem_alnreg_v array allocated by mem_align1
         if regs.a != ffi.NULL:
             libbwa.free(regs.a)
-        
+
         return tuple(alignments)
 
     def _align_paired_end(self, seq1: str, seq2: str):
@@ -404,7 +427,7 @@ class BwaAligner(object):
         eff_insert_std = None
         eff_insert_min = None
         eff_insert_max = None
-        if getattr(self, '_insert_model', None) is not None:
+        if getattr(self, "_insert_model", None) is not None:
             model = self._insert_model
             # model = (mean, std, max) or (mean, std, max, min)
             eff_insert_size = float(model[0])
@@ -413,23 +436,37 @@ class BwaAligner(object):
             if len(model) >= 4:
                 eff_insert_min = int(model[3])
         # Get alignment regions for both reads
-        regs1 = libbwa.mem_align1(self.opt, self.index.bwt, self.index.bns, self.index.pac, 
-                                 len(seq1), seq1.encode())
-        regs2 = libbwa.mem_align1(self.opt, self.index.bwt, self.index.bns, self.index.pac, 
-                                 len(seq2), seq2.encode())
-        
+        regs1 = libbwa.mem_align1(
+            self.opt,
+            self.index.bwt,
+            self.index.bns,
+            self.index.pac,
+            len(seq1),
+            seq1.encode(),
+        )
+        regs2 = libbwa.mem_align1(
+            self.opt,
+            self.index.bwt,
+            self.index.bns,
+            self.index.pac,
+            len(seq2),
+            seq2.encode(),
+        )
+
         # Create arrays for paired-end processing
-        regs_array = ffi.new('mem_alnreg_v[2]')
+        regs_array = ffi.new("mem_alnreg_v[2]")
         regs_array[0] = regs1
         regs_array[1] = regs2
-        
+
         # Set up insert size distribution
-        pes = ffi.new('mem_pestat_t[4]')
+        pes = ffi.new("mem_pestat_t[4]")
         if eff_insert_size is not None:
             # Use provided insert size
             pes[1].failed = 0
             pes[1].avg = eff_insert_size
-            pes[1].std = eff_insert_std if eff_insert_std is not None else eff_insert_size * 0.1
+            pes[1].std = (
+                eff_insert_std if eff_insert_std is not None else eff_insert_size * 0.1
+            )
             pes[1].high = int(pes[1].avg + 4.0 * pes[1].std + 0.499)
             pes[1].low = int(pes[1].avg - 4.0 * pes[1].std + 0.499)
             if pes[1].low < 1:
@@ -442,13 +479,13 @@ class BwaAligner(object):
         else:
             # Infer insert size from data
             libbwa.mem_pestat(self.opt, self.index.bns.l_pac, 2, regs_array, pes)
-        
+
         # Skip mem_sam_pe; construct paired alignments from regions
-        
+
         # Parse the results (this is simplified - in practice you'd parse the SAM output)
         # For now, return basic paired-end information
         paired_alignments = []
-        
+
         # Convert regions to single alignments for each read
         read1_alignments = self._convert_regions_to_alignments(regs1, seq1, 1)
         read2_alignments = self._convert_regions_to_alignments(regs2, seq2, 2)
@@ -457,25 +494,36 @@ class BwaAligner(object):
             libbwa.free(regs1.a)
         if regs2.a != ffi.NULL:
             libbwa.free(regs2.a)
-        
+
         # Create paired alignments
         for aln1 in read1_alignments:
             for aln2 in read2_alignments:
                 # Check if this is a proper pair
                 is_proper = self._is_proper_pair(
-                    aln1, aln2, pes, len(seq1), len(seq2),
-                    eff_insert_size, eff_insert_std, eff_insert_min, eff_insert_max
+                    aln1,
+                    aln2,
+                    pes,
+                    len(seq1),
+                    len(seq2),
+                    eff_insert_size,
+                    eff_insert_std,
+                    eff_insert_min,
+                    eff_insert_max,
                 )
-                insert_size_val = self._calculate_insert_size(aln1, aln2, len(seq1), len(seq2)) if is_proper else None
-                
+                insert_size_val = (
+                    self._calculate_insert_size(aln1, aln2, len(seq1), len(seq2))
+                    if is_proper
+                    else None
+                )
+
                 paired_aln = PairedAlignment(
                     read1=aln1,
                     read2=aln2,
                     is_proper_pair=is_proper,
-                    insert_size=insert_size_val
+                    insert_size=insert_size_val,
                 )
                 paired_alignments.append(paired_aln)
-        
+
         return tuple(paired_alignments)
 
     def _convert_regions_to_alignments(self, regs, seq, read_num):
@@ -483,19 +531,27 @@ class BwaAligner(object):
         alignments = []
         for i in range(regs.n):
             if regs.a[i].score >= self.opt.T:
-                aln_ptr = libbwa.mem_reg2aln_ptr(self.opt, self.index.bns, self.index.pac, 
-                                        len(seq), seq.encode(), ffi.addressof(regs.a[i]))
+                aln_ptr = libbwa.mem_reg2aln_ptr(
+                    self.opt,
+                    self.index.bns,
+                    self.index.pac,
+                    len(seq),
+                    seq.encode(),
+                    ffi.addressof(regs.a[i]),
+                )
                 if aln_ptr != ffi.NULL and aln_ptr.rid >= 0:
                     cigar = self._build_cigar(aln_ptr.cigar, aln_ptr.n_cigar)
                     alignment = Alignment(
-                        rname=ffi.string(self.index.bns.anns[aln_ptr.rid].name).decode(),
-                        orient='+-'[aln_ptr.is_rev],
+                        rname=ffi.string(
+                            self.index.bns.anns[aln_ptr.rid].name
+                        ).decode(),
+                        orient="+-"[aln_ptr.is_rev],
                         pos=aln_ptr.pos,
                         mapq=aln_ptr.mapq,
                         cigar=cigar,
                         NM=aln_ptr.NM,
                         score=regs.a[i].score,
-                        is_primary=(i == 0)
+                        is_primary=(i == 0),
                     )
                     alignments.append(alignment)
                     if aln_ptr.cigar != ffi.NULL:
@@ -503,15 +559,24 @@ class BwaAligner(object):
                     libbwa.free(aln_ptr)
         return alignments
 
-    def _is_proper_pair(self, aln1, aln2, pes, len1: int, len2: int,
-                        user_insert: float | None, user_std: float | None,
-                        user_min: int | None, user_max: int | None):
+    def _is_proper_pair(
+        self,
+        aln1,
+        aln2,
+        pes,
+        len1: int,
+        len2: int,
+        user_insert: float | None,
+        user_std: float | None,
+        user_min: int | None,
+        user_max: int | None,
+    ):
         """Check if two alignments form a proper FR pair with plausible insert size."""
         if aln1.rname != aln2.rname:
             return False
 
         # Require FR orientation: read1 on '+' before read2 on '-'
-        is_fr = (aln1.orient == '+') and (aln2.orient == '-') and (aln1.pos <= aln2.pos)
+        is_fr = (aln1.orient == "+") and (aln2.orient == "-") and (aln1.pos <= aln2.pos)
         if not is_fr:
             return False
 
@@ -542,7 +607,7 @@ class BwaAligner(object):
                 high = avg_high
 
         # If still missing, attempt to use FR bin from pes
-        if (low is None or high is None):
+        if low is None or high is None:
             try:
                 fr_pes = pes[1]
                 if not fr_pes.failed:
@@ -568,7 +633,7 @@ class BwaAligner(object):
         """Calculate insert size for FR pairs (distance between 5' ends including read2 length)."""
         if aln1.rname != aln2.rname:
             return None
-        if aln1.orient == '+' and aln2.orient == '-' and aln1.pos <= aln2.pos:
+        if aln1.orient == "+" and aln2.orient == "-" and aln1.pos <= aln2.pos:
             # 5' ends: aln1.pos and aln2.pos + len2 - 1; include read2 length
             return int((aln2.pos + len2) - aln1.pos)
         return None
@@ -577,81 +642,84 @@ class BwaAligner(object):
         """Build CIGAR string from CIGAR array."""
         if n_cigar == 0:
             return ""
-        
+
         cigar = ""
         for i in range(n_cigar):
             op_len = cigar_array[i] >> 4
-            op = cigar_array[i] & 0xf
+            op = cigar_array[i] & 0xF
             cigar += str(op_len) + self._cigchar[op]
-        
+
         return cigar
 
 
 class BwaIndexer(object):
     """Interface to BWA index building functionality."""
-    
+
     # Algorithm types
     BWTALGO_AUTO = 0
     BWTALGO_RB2 = 1
     BWTALGO_BWTSW = 2
     BWTALGO_IS = 3
-    
-    def __init__(self, algorithm='auto', block_size=10000000):
+
+    def __init__(self, algorithm="auto", block_size=10000000):
         """Initialize BWA indexer.
-        
+
         :param algorithm: BWT construction algorithm ('auto', 'rb2', 'bwtsw', 'is')
         :param block_size: Block size for bwtsw algorithm (in bytes)
         """
         self.algorithm = algorithm
         self.block_size = block_size
-        
+
         # Convert algorithm string to integer
         algo_map = {
-            'auto': self.BWTALGO_AUTO,
-            'rb2': self.BWTALGO_RB2,
-            'bwtsw': self.BWTALGO_BWTSW,
-            'is': self.BWTALGO_IS
+            "auto": self.BWTALGO_AUTO,
+            "rb2": self.BWTALGO_RB2,
+            "bwtsw": self.BWTALGO_BWTSW,
+            "is": self.BWTALGO_IS,
         }
-        
+
         if algorithm not in algo_map:
-            raise ValueError(f"Unknown algorithm '{algorithm}'. "
-                           f"Choose from: {list(algo_map.keys())}")
-        
+            raise ValueError(
+                f"Unknown algorithm '{algorithm}'. Choose from: {list(algo_map.keys())}"
+            )
+
         self.algo_type = algo_map[algorithm]
-    
+
     def build_index(self, fasta_file, prefix=None):
         """Build BWA index from FASTA file.
-        
+
         :param fasta_file: Path to input FASTA file
         :param prefix: Output prefix for index files (default: same as FASTA file)
         :returns: Path to the index prefix
         """
         import os
-        
+
         if not os.path.exists(fasta_file):
             raise FileNotFoundError(f"FASTA file not found: {fasta_file}")
-        
+
         if prefix is None:
             # Use FASTA filename without extension as prefix
             prefix = os.path.splitext(fasta_file)[0]
-        
+
         # Convert to bytes for C function
-        fasta_bytes = fasta_file.encode('utf-8')
-        prefix_bytes = prefix.encode('utf-8')
-        
+        fasta_bytes = fasta_file.encode("utf-8")
+        prefix_bytes = prefix.encode("utf-8")
+
         # Call the C function directly
-        result = libbwa.bwa_idx_build(fasta_bytes, prefix_bytes,
-                                    self.algo_type, self.block_size)
-        
+        result = libbwa.bwa_idx_build(
+            fasta_bytes, prefix_bytes, self.algo_type, self.block_size
+        )
+
         if result != 0:
             raise RuntimeError(f"Failed to build BWA index for {fasta_file}")
-        
+
         return prefix
-    
-    def build_index_with_options(self, fasta_file, prefix=None, 
-                               algorithm=None, block_size=None):
+
+    def build_index_with_options(
+        self, fasta_file, prefix=None, algorithm=None, block_size=None
+    ):
         """Build BWA index with specific options.
-        
+
         :param fasta_file: Path to input FASTA file
         :param prefix: Output prefix for index files
         :param algorithm: BWT construction algorithm ('auto', 'rb2', 'bwtsw', 'is')
@@ -661,23 +729,25 @@ class BwaIndexer(object):
         # Temporarily override instance settings
         old_algorithm = self.algorithm
         old_block_size = self.block_size
-        
+
         if algorithm is not None:
             self.algorithm = algorithm
             algo_map = {
-                'auto': self.BWTALGO_AUTO,
-                'rb2': self.BWTALGO_RB2,
-                'bwtsw': self.BWTALGO_BWTSW,
-                'is': self.BWTALGO_IS
+                "auto": self.BWTALGO_AUTO,
+                "rb2": self.BWTALGO_RB2,
+                "bwtsw": self.BWTALGO_BWTSW,
+                "is": self.BWTALGO_IS,
             }
             if algorithm not in algo_map:
-                raise ValueError(f"Unknown algorithm '{algorithm}'. "
-                               f"Choose from: {list(algo_map.keys())}")
+                raise ValueError(
+                    f"Unknown algorithm '{algorithm}'. "
+                    f"Choose from: {list(algo_map.keys())}"
+                )
             self.algo_type = algo_map[algorithm]
-        
+
         if block_size is not None:
             self.block_size = block_size
-        
+
         try:
             result = self.build_index(fasta_file, prefix)
         finally:
@@ -686,32 +756,31 @@ class BwaIndexer(object):
             self.block_size = old_block_size
             if algorithm is not None:
                 algo_map = {
-                    'auto': self.BWTALGO_AUTO,
-                    'rb2': self.BWTALGO_RB2,
-                    'bwtsw': self.BWTALGO_BWTSW,
-                    'is': self.BWTALGO_IS
+                    "auto": self.BWTALGO_AUTO,
+                    "rb2": self.BWTALGO_RB2,
+                    "bwtsw": self.BWTALGO_BWTSW,
+                    "is": self.BWTALGO_IS,
                 }
                 self.algo_type = algo_map[self.algorithm]
-        
+
         return result
 
 
 def get_parser():
-    parser = argparse.ArgumentParser('Align a sequence with bwa mem.')
-    parser.add_argument('index', help='bwa index base path.')
-    parser.add_argument('sequence', nargs='+', help='base sequence')
+    parser = argparse.ArgumentParser("Align a sequence with bwa mem.")
+    parser.add_argument("index", help="bwa index base path.")
+    parser.add_argument("sequence", nargs="+", help="base sequence")
     return parser
 
 
 def main():
     args, opts = get_parser().parse_known_args()
-    options = ''
+    options = ""
     if len(opts) > 0:
-        options = ' '.join(opts)
+        options = " ".join(opts)
     aligner = BwaAligner(args.index, options=options)
     for i, seq in enumerate(args.sequence, 1):
         alignments = aligner.align_seq(seq)
-        print('Found {} alignments for input {}.'.format(len(alignments), i))
+        print("Found {} alignments for input {}.".format(len(alignments), i))
         for aln in alignments:
-            print('  ', aln)
-
+            print("  ", aln)

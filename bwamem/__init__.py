@@ -3,7 +3,7 @@ from bwamem.fastq_reader import FastqRead, read_fastq, read_paired_fastq
 
 __all__ = [
     "BwaAligner",
-    "BwaIndexer", 
+    "BwaIndexer",
     "Alignment",
     "PairedAlignment",
     "FastqRead",

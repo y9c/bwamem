@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Create demo FASTA and FASTQ files for testing."""
 
+
 def create_demo_files():
     """Create demo FASTA and FASTQ files for testing (under tests/)."""
     import os
 
-    os.makedirs('tests', exist_ok=True)
+    os.makedirs("tests", exist_ok=True)
 
     # Create demo FASTA reference
     fasta_content = ">chr1\n" + ("ATCG" * 64) + "\n" + ("ATCG" * 64) + "\n"
-    with open('tests/demo_reference.fasta', 'w') as f:
+    with open("tests/demo_reference.fasta", "w") as f:
         f.write(fasta_content)
 
     # Create demo FASTQ R1 file with matching seq/qual lengths (64)
@@ -32,7 +33,7 @@ def create_demo_files():
 +
 {q1_3}
 """
-    with open('tests/demo_reads_R1.fastq', 'w') as f:
+    with open("tests/demo_reads_R1.fastq", "w") as f:
         f.write(fastq_r1_content)
 
     # Create demo FASTQ R2 file with matching seq/qual lengths (64)
@@ -55,13 +56,14 @@ def create_demo_files():
 +
 {q2_3}
 """
-    with open('tests/demo_reads_R2.fastq', 'w') as f:
+    with open("tests/demo_reads_R2.fastq", "w") as f:
         f.write(fastq_r2_content)
 
     print("Created demo files:")
     print("- tests/demo_reference.fasta")
     print("- tests/demo_reads_R1.fastq")
     print("- tests/demo_reads_R2.fastq")
+
 
 if __name__ == "__main__":
     create_demo_files()
