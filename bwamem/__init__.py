@@ -1,12 +1,13 @@
 from bwamem.libbwa import BwaAligner, BwaIndexer, Alignment, PairedAlignment
-from bwamem.fastq_reader import FastqRead, read_fastq, read_paired_fastq
+from bwamem.fastq_reader import FastqRead, read_fastq, read_paired_fastq, FastqReader
 
 __all__ = [
     "BwaAligner",
-    "BwaIndexer",
+    "BwaIndexer", 
     "Alignment",
     "PairedAlignment",
     "FastqRead",
     "read_fastq",
     "read_paired_fastq",
+    "FastqReader",
 ]

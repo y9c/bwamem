@@ -243,6 +243,17 @@ ffi.cdef("""
   // Index building
   //
   int bwa_idx_build(const char *fa, const char *prefix, int algo_type, int block_size);
+  
+  ///////////////////
+  // FASTQ reading functions
+  //
+  // kseq functions for FASTQ reading
+  void *kseq_init(void *fp);
+  int kseq_read(void *ks);
+  void kseq_destroy(void *ks);
+  // bseq functions for batch reading
+  bseq1_t *bseq_read(int chunk_size, int *n_, void *ks1_, void *ks2_);
+  
   // C standard free for releasing memory allocated by BWA
   void free(void *ptr);
   // Control BWA logging verbosity
