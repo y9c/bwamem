@@ -56,6 +56,7 @@ extensions = [
     )
 ]
 
+
 # Minimal setup - all metadata comes from pyproject.toml
 setup(
     ext_modules=extensions,
