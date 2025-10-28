@@ -77,7 +77,8 @@ for read1, read2 in read_paired_fastx('R1.fastq', 'R2.fastq'):
 aligner = BwaAligner('path/to/index', options='-x ont2d -A 1 -B 0')
 
 # Set custom insert size for paired-end reads
-paired_alignments = aligner.align(read1, read2, insert_size=500, insert_std=50)
+aligner = BwaAligner('path/to/index', insert_model=(500, 50))
+paired_alignments = aligner.align(read1, read2)
 ```
 
 Alignment Attributes
