@@ -278,10 +278,98 @@ ffi.cdef("""
 
 
 # Alignment result for single reads
-Alignment = namedtuple(
-    "Alignment",
-    ["rname", "orient", "pos", "mapq", "cigar", "NM", "score", "is_primary"],
-)
+class Alignment:
+    """Alignment result with minimap2-style attributes.
+    
+    Core attributes:
+    - ctg: contig/reference name
+    - ctg_len: contig/reference length
+    - r_st: reference start (0-based)
+    - strand: +1 for forward, -1 for reverse
+    - q_st, q_en: query start/end (0-based)
+    - mapq: mapping quality
+    - cigar: list of [length, op] pairs (0=M, 1=I, 2=D, 3=N, 4=S, 5=H)
+    - NM: edit distance
+    - is_primary: primary alignment flag
+    - read_num: 0=single-end, 1/2=paired-end
+    - trans_strand: transcript strand (0 for DNA)
+    - score: alignment score
+    
+    Calculated properties:
+    - cigar_str: CIGAR string (e.g., "100M")
+    - r_en: reference end
+    - blen: alignment block length
+    - mlen: number of matching bases
+    """
+    
+    __slots__ = ['ctg', 'ctg_len', 'r_st', 'strand', 'q_st', 'q_en', 
+                 'mapq', 'cigar', 'NM', 'is_primary', 
+                 'read_num', 'trans_strand', 'score']
+    
+    # CIGAR operation characters
+    _CIGAR_OPS = 'MIDNSHP=XB'
+    
+    def __init__(self, ctg, ctg_len, r_st, strand, q_st, q_en, mapq, 
+                 cigar, NM, is_primary, read_num, trans_strand, score):
+        self.ctg = ctg
+        self.ctg_len = ctg_len
+        self.r_st = r_st
+        self.strand = strand
+        self.q_st = q_st
+        self.q_en = q_en
+        self.mapq = mapq
+        self.cigar = cigar
+        self.NM = NM
+        self.is_primary = is_primary
+        self.read_num = read_num
+        self.trans_strand = trans_strand
+        self.score = score
+    
+    @property
+    def cigar_str(self):
+        """CIGAR string (calculated from cigar list)."""
+        if not self.cigar:
+            return ""
+        return "".join(f"{length}{self._CIGAR_OPS[op]}" for length, op in self.cigar)
+    
+    @property
+    def r_en(self):
+        """Reference end position (calculated from r_st + CIGAR)."""
+        pos = self.r_st
+        for op_len, op in self.cigar:
+            if op in [0, 2, 3]:  # M, D, N consume reference
+                pos += op_len
+        return pos
+    
+    @property
+    def blen(self):
+        """Alignment block length (including gaps)."""
+        length = 0
+        for op_len, op in self.cigar:
+            if op in [0, 1, 2, 3]:  # M, I, D, N
+                length += op_len
+        return length
+    
+    @property
+    def mlen(self):
+        """Number of matching bases."""
+        matches = 0
+        for op_len, op in self.cigar:
+            if op == 0:  # M
+                matches += op_len
+        return matches
+    
+    def __repr__(self):
+        return (f"Alignment(ctg={self.ctg!r}, r_st={self.r_st}, r_en={self.r_en}, "
+                f"strand={self.strand}, q_st={self.q_st}, q_en={self.q_en}, "
+                f"mapq={self.mapq}, cigar_str={self.cigar_str!r}, NM={self.NM})")
+    
+    def __str__(self):
+        """PAF-like format."""
+        return f"{self.q_st}\t{self.q_en}\t{'+' if self.strand > 0 else '-'}\t" \
+               f"{self.ctg}\t{self.ctg_len}\t{self.r_st}\t{self.r_en}\t" \
+               f"{self.mlen}\t{self.blen}\t{self.mapq}\t" \
+               f"tp:A:{'P' if self.is_primary else 'S'}\tcg:Z:{self.cigar_str}"
 
 # Paired-end alignment result
 PairedAlignment = namedtuple(
@@ -430,27 +518,38 @@ class BwaAligner(object):
         alignments = []
         for i in range(regs.n):
             if regs.a[i].score >= self.opt.T:  # Only keep alignments above threshold
+                reg = regs.a[i]
                 aln_ptr = libbwa.mem_reg2aln_ptr(
                     self.opt,
                     self.index.bns,
                     self.index.pac,
                     len(seq),
                     seq.encode(),
-                    ffi.addressof(regs.a[i]),
+                    ffi.addressof(reg),
                 )
                 if aln_ptr != ffi.NULL and aln_ptr.rid >= 0:  # Valid alignment
+                    # Build CIGAR
                     cigar = self._build_cigar(aln_ptr.cigar, aln_ptr.n_cigar)
+                    
+                    # Get reference info
+                    ctg_name = ffi.string(self.index.bns.anns[aln_ptr.rid].name).decode()
+                    ctg_len = self.index.bns.anns[aln_ptr.rid].len
+                    
+                    # Create alignment
                     alignment = Alignment(
-                        rname=ffi.string(
-                            self.index.bns.anns[aln_ptr.rid].name
-                        ).decode(),
-                        orient="+-"[aln_ptr.is_rev],
-                        pos=aln_ptr.pos,
+                        ctg=ctg_name,
+                        ctg_len=ctg_len,
+                        r_st=aln_ptr.pos,
+                        strand=-1 if aln_ptr.is_rev else 1,
+                        q_st=reg.qb,
+                        q_en=reg.qe,
                         mapq=aln_ptr.mapq,
                         cigar=cigar,
                         NM=aln_ptr.NM,
-                        score=regs.a[i].score,
                         is_primary=(i == 0),
+                        read_num=0,  # Single-end
+                        trans_strand=0,  # DNA alignment
+                        score=reg.score,
                     )
                     alignments.append(alignment)
                     # Free dynamically allocated CIGAR and struct
@@ -572,31 +671,48 @@ class BwaAligner(object):
         return tuple(paired_alignments)
 
     def _convert_regions_to_alignments(self, regs, seq, read_num):
-        """Convert alignment regions to Alignment objects."""
+        """Convert alignment regions to Alignment objects.
+        
+        Args:
+            regs: mem_alnreg_v structure with alignment regions
+            seq: query sequence string
+            read_num: read number (1 or 2 for paired-end)
+        """
         alignments = []
         for i in range(regs.n):
             if regs.a[i].score >= self.opt.T:
+                reg = regs.a[i]
                 aln_ptr = libbwa.mem_reg2aln_ptr(
                     self.opt,
                     self.index.bns,
                     self.index.pac,
                     len(seq),
                     seq.encode(),
-                    ffi.addressof(regs.a[i]),
+                    ffi.addressof(reg),
                 )
                 if aln_ptr != ffi.NULL and aln_ptr.rid >= 0:
+                    # Build CIGAR
                     cigar = self._build_cigar(aln_ptr.cigar, aln_ptr.n_cigar)
+                    
+                    # Get reference info
+                    ctg_name = ffi.string(self.index.bns.anns[aln_ptr.rid].name).decode()
+                    ctg_len = self.index.bns.anns[aln_ptr.rid].len
+                    
+                    # Create alignment
                     alignment = Alignment(
-                        rname=ffi.string(
-                            self.index.bns.anns[aln_ptr.rid].name
-                        ).decode(),
-                        orient="+-"[aln_ptr.is_rev],
-                        pos=aln_ptr.pos,
+                        ctg=ctg_name,
+                        ctg_len=ctg_len,
+                        r_st=aln_ptr.pos,
+                        strand=-1 if aln_ptr.is_rev else 1,
+                        q_st=reg.qb,
+                        q_en=reg.qe,
                         mapq=aln_ptr.mapq,
                         cigar=cigar,
                         NM=aln_ptr.NM,
-                        score=regs.a[i].score,
                         is_primary=(i == 0),
+                        read_num=read_num,
+                        trans_strand=0,  # DNA alignment
+                        score=reg.score,
                     )
                     alignments.append(alignment)
                     if aln_ptr.cigar != ffi.NULL:
@@ -617,11 +733,11 @@ class BwaAligner(object):
         user_max: int | None,
     ):
         """Check if two alignments form a proper FR pair with plausible insert size."""
-        if aln1.rname != aln2.rname:
+        if aln1.ctg != aln2.ctg:
             return False
 
         # Require FR orientation: read1 on '+' before read2 on '-'
-        is_fr = (aln1.orient == "+") and (aln2.orient == "-") and (aln1.pos <= aln2.pos)
+        is_fr = (aln1.strand > 0) and (aln2.strand < 0) and (aln1.r_st <= aln2.r_st)
         if not is_fr:
             return False
 
@@ -676,25 +792,29 @@ class BwaAligner(object):
 
     def _calculate_insert_size(self, aln1, aln2, len1: int, len2: int):
         """Calculate insert size for FR pairs (distance between 5' ends including read2 length)."""
-        if aln1.rname != aln2.rname:
+        if aln1.ctg != aln2.ctg:
             return None
-        if aln1.orient == "+" and aln2.orient == "-" and aln1.pos <= aln2.pos:
-            # 5' ends: aln1.pos and aln2.pos + len2 - 1; include read2 length
-            return int((aln2.pos + len2) - aln1.pos)
+        if aln1.strand > 0 and aln2.strand < 0 and aln1.r_st <= aln2.r_st:
+            # 5' ends: aln1.r_st and aln2.r_st + len2 - 1; include read2 length
+            return int((aln2.r_st + len2) - aln1.r_st)
         return None
 
     def _build_cigar(self, cigar_array, n_cigar):
-        """Build CIGAR string from CIGAR array."""
+        """Build CIGAR list from CIGAR array.
+        
+        Returns:
+            list: list of [length, op] pairs
+        """
         if n_cigar == 0:
-            return ""
+            return []
 
-        cigar = ""
+        cigar_list = []
         for i in range(n_cigar):
             op_len = cigar_array[i] >> 4
             op = cigar_array[i] & 0xF
-            cigar += str(op_len) + self._cigchar[op]
+            cigar_list.append([op_len, op])
 
-        return cigar
+        return cigar_list
 
 
 class BwaIndexer(object):

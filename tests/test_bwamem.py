@@ -82,29 +82,46 @@ def test_align_function_signature():
 
 
 def test_data_structures():
-    """Test that the new data structures work correctly."""
+    """Test that the data structures work correctly."""
     from bwamem import Alignment, PairedAlignment
 
     # Test Alignment
     se_aln = Alignment(
-        rname="chr1",
-        orient="+",
-        pos=1000,
+        ctg="chr1",
+        ctg_len=10000,
+        r_st=1000,
+        strand=1,
+        q_st=0,
+        q_en=100,
         mapq=60,
-        cigar="100M",
+        cigar=[[100, 0]],  # 100M as [length, op]
         NM=0,
-        score=100,
         is_primary=True,
+        read_num=0,
+        trans_strand=0,
+        score=100,
     )
 
-    assert se_aln.rname == "chr1"
-    assert se_aln.orient == "+"
-    assert se_aln.pos == 1000
+    # Test core attributes
+    assert se_aln.ctg == "chr1"
+    assert se_aln.ctg_len == 10000
+    assert se_aln.r_st == 1000
+    assert se_aln.strand == 1
+    assert se_aln.q_st == 0
+    assert se_aln.q_en == 100
     assert se_aln.mapq == 60
-    assert se_aln.cigar == "100M"
+    assert se_aln.cigar == [[100, 0]]
+    assert se_aln.cigar_str == "100M"
     assert se_aln.NM == 0
     assert se_aln.score == 100
     assert se_aln.is_primary
+    assert se_aln.read_num == 0
+    assert se_aln.trans_strand == 0
+    
+    # Test calculated properties
+    assert se_aln.r_en == 1100  # r_st + 100M
+    assert se_aln.blen == 100
+    assert se_aln.mlen == 100
 
     # Test PairedAlignment
     pe_aln = PairedAlignment(
@@ -183,18 +200,34 @@ def test_data_structure_fields():
     """Test that data structures have the correct fields."""
     from bwamem import Alignment, PairedAlignment
 
-    # Test Alignment fields
-    expected_se_fields = (
-        "rname",
-        "orient",
-        "pos",
-        "mapq",
-        "cigar",
-        "NM",
-        "score",
-        "is_primary",
+    # Test Alignment has the expected attributes
+    test_aln = Alignment(
+        ctg="test", ctg_len=1000, r_st=0, strand=1,
+        q_st=0, q_en=100, mapq=60, cigar=[[100, 0]],
+        NM=0, is_primary=True, read_num=0,
+        trans_strand=0, score=100
     )
-    assert Alignment._fields == expected_se_fields
+    
+    # Test core attributes exist
+    assert hasattr(test_aln, "ctg")
+    assert hasattr(test_aln, "ctg_len")
+    assert hasattr(test_aln, "r_st")
+    assert hasattr(test_aln, "strand")
+    assert hasattr(test_aln, "q_st")
+    assert hasattr(test_aln, "q_en")
+    assert hasattr(test_aln, "mapq")
+    assert hasattr(test_aln, "cigar")
+    assert hasattr(test_aln, "cigar_str")
+    assert hasattr(test_aln, "NM")
+    assert hasattr(test_aln, "is_primary")
+    assert hasattr(test_aln, "read_num")
+    assert hasattr(test_aln, "trans_strand")
+    assert hasattr(test_aln, "score")
+    
+    # Test calculated properties
+    assert hasattr(test_aln, "r_en")
+    assert hasattr(test_aln, "blen")
+    assert hasattr(test_aln, "mlen")
 
     # Test PairedAlignment fields
     expected_pe_fields = ("read1", "read2", "is_proper_pair", "insert_size")
