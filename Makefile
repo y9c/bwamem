@@ -17,10 +17,12 @@ help:  ## Show this help message
 install:  ## Install the package and dependencies
 	$(MAKE) bwa-lib
 	uv sync
+	uv pip install -e . --no-deps
 
 install-dev:  ## Install with development dependencies
 	$(MAKE) bwa-lib
 	uv sync --extra dev
+	uv pip install -e . --no-deps
 
 bwa-lib: bwa/libbwa.a  ## Build BWA static library
 
