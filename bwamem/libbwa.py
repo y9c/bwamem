@@ -1,9 +1,8 @@
 import argparse
-from collections import namedtuple
 import importlib
 import importlib.util
 import os
-import sys  # noqa: F401
+from collections import namedtuple
 from contextlib import contextmanager
 
 from cffi import FFI
@@ -280,7 +279,7 @@ ffi.cdef("""
 # Alignment result for single reads
 class Alignment:
     """Alignment result with minimap2-style attributes.
-    
+
     Core attributes:
     - ctg: contig/reference name
     - ctg_len: contig/reference length
@@ -294,23 +293,49 @@ class Alignment:
     - read_num: 0=single-end, 1/2=paired-end
     - trans_strand: transcript strand (0 for DNA)
     - score: alignment score
-    
+
     Calculated properties:
     - cigar_str: CIGAR string (e.g., "100M")
     - r_en: reference end
     - blen: alignment block length
     - mlen: number of matching bases
     """
-    
-    __slots__ = ['ctg', 'ctg_len', 'r_st', 'strand', 'q_st', 'q_en', 
-                 'mapq', 'cigar', 'NM', 'is_primary', 
-                 'read_num', 'trans_strand', 'score']
-    
+
+    __slots__ = [
+        "ctg",
+        "ctg_len",
+        "r_st",
+        "strand",
+        "q_st",
+        "q_en",
+        "mapq",
+        "cigar",
+        "NM",
+        "is_primary",
+        "read_num",
+        "trans_strand",
+        "score",
+    ]
+
     # CIGAR operation characters
-    _CIGAR_OPS = 'MIDNSHP=XB'
-    
-    def __init__(self, ctg, ctg_len, r_st, strand, q_st, q_en, mapq, 
-                 cigar, NM, is_primary, read_num, trans_strand, score):
+    _CIGAR_OPS = "MIDNSHP=XB"
+
+    def __init__(
+        self,
+        ctg,
+        ctg_len,
+        r_st,
+        strand,
+        q_st,
+        q_en,
+        mapq,
+        cigar,
+        NM,
+        is_primary,
+        read_num,
+        trans_strand,
+        score,
+    ):
         self.ctg = ctg
         self.ctg_len = ctg_len
         self.r_st = r_st
@@ -324,14 +349,14 @@ class Alignment:
         self.read_num = read_num
         self.trans_strand = trans_strand
         self.score = score
-    
+
     @property
     def cigar_str(self):
         """CIGAR string (calculated from cigar list)."""
         if not self.cigar:
             return ""
         return "".join(f"{length}{self._CIGAR_OPS[op]}" for length, op in self.cigar)
-    
+
     @property
     def r_en(self):
         """Reference end position (calculated from r_st + CIGAR)."""
@@ -340,7 +365,7 @@ class Alignment:
             if op in [0, 2, 3]:  # M, D, N consume reference
                 pos += op_len
         return pos
-    
+
     @property
     def blen(self):
         """Alignment block length (including gaps)."""
@@ -349,7 +374,7 @@ class Alignment:
             if op in [0, 1, 2, 3]:  # M, I, D, N
                 length += op_len
         return length
-    
+
     @property
     def mlen(self):
         """Number of matching bases."""
@@ -358,18 +383,23 @@ class Alignment:
             if op == 0:  # M
                 matches += op_len
         return matches
-    
+
     def __repr__(self):
-        return (f"Alignment(ctg={self.ctg!r}, r_st={self.r_st}, r_en={self.r_en}, "
-                f"strand={self.strand}, q_st={self.q_st}, q_en={self.q_en}, "
-                f"mapq={self.mapq}, cigar_str={self.cigar_str!r}, NM={self.NM})")
-    
+        return (
+            f"Alignment(ctg={self.ctg!r}, r_st={self.r_st}, r_en={self.r_en}, "
+            f"strand={self.strand}, q_st={self.q_st}, q_en={self.q_en}, "
+            f"mapq={self.mapq}, cigar_str={self.cigar_str!r}, NM={self.NM})"
+        )
+
     def __str__(self):
         """PAF-like format."""
-        return f"{self.q_st}\t{self.q_en}\t{'+' if self.strand > 0 else '-'}\t" \
-               f"{self.ctg}\t{self.ctg_len}\t{self.r_st}\t{self.r_en}\t" \
-               f"{self.mlen}\t{self.blen}\t{self.mapq}\t" \
-               f"tp:A:{'P' if self.is_primary else 'S'}\tcg:Z:{self.cigar_str}"
+        return (
+            f"{self.q_st}\t{self.q_en}\t{'+' if self.strand > 0 else '-'}\t"
+            f"{self.ctg}\t{self.ctg_len}\t{self.r_st}\t{self.r_en}\t"
+            f"{self.mlen}\t{self.blen}\t{self.mapq}\t"
+            f"tp:A:{'P' if self.is_primary else 'S'}\tcg:Z:{self.cigar_str}"
+        )
+
 
 # Paired-end alignment result
 PairedAlignment = namedtuple(
@@ -483,14 +513,14 @@ class BwaAligner(object):
                 pass
         # No additional opt memory to free
 
-    def seq(self, name: str, start: int = 0, end: int = 0x7fffffff) -> str | None:
+    def seq(self, name: str, start: int = 0, end: int = 0x7FFFFFFF) -> str | None:
         """Retrieve a (sub)sequence from the index.
-        
+
         Args:
             name: Contig/reference name
             start: Start position (0-based, inclusive)
             end: End position (0-based, exclusive, default: end of sequence)
-            
+
         Returns:
             Subsequence as a string, or None if name not found or coordinates invalid
         """
@@ -501,15 +531,15 @@ class BwaAligner(object):
             if seq_name == name:
                 seq_id = i
                 break
-        
+
         if seq_id < 0:
             return None
-        
+
         # Get sequence info
         ann = self.index.bns.anns[seq_id]
         seq_len = ann.len
         seq_offset = ann.offset
-        
+
         # Validate and adjust coordinates
         if start < 0:
             start = 0
@@ -517,24 +547,24 @@ class BwaAligner(object):
             end = seq_len
         if start >= end or start >= seq_len:
             return None
-        
+
         # Extract sequence from packed format (2-bit encoding)
         # BWA stores sequences as 2-bit encoded: A=0, C=1, G=2, T=3
         result = []
-        base_chars = 'ACGT'
-        
+        base_chars = "ACGT"
+
         for pos in range(start, end):
             # Calculate position in packed array
             global_pos = seq_offset + pos
             byte_pos = global_pos >> 2  # Divide by 4
             bit_offset = (3 - (global_pos & 3)) << 1  # 6, 4, 2, or 0
-            
+
             # Extract 2 bits and convert to base
             base_code = (self.index.pac[byte_pos] >> bit_offset) & 3
             result.append(base_chars[base_code])
-        
-        return ''.join(result)
-    
+
+        return "".join(result)
+
     def align(self, seq1: str, seq2: str = None):
         """Align one or two sequences to the index.
 
@@ -582,11 +612,13 @@ class BwaAligner(object):
                 if aln_ptr != ffi.NULL and aln_ptr.rid >= 0:  # Valid alignment
                     # Build CIGAR
                     cigar = self._build_cigar(aln_ptr.cigar, aln_ptr.n_cigar)
-                    
+
                     # Get reference info
-                    ctg_name = ffi.string(self.index.bns.anns[aln_ptr.rid].name).decode()
+                    ctg_name = ffi.string(
+                        self.index.bns.anns[aln_ptr.rid].name
+                    ).decode()
                     ctg_len = self.index.bns.anns[aln_ptr.rid].len
-                    
+
                     # Create alignment
                     alignment = Alignment(
                         ctg=ctg_name,
@@ -724,7 +756,7 @@ class BwaAligner(object):
 
     def _convert_regions_to_alignments(self, regs, seq, read_num):
         """Convert alignment regions to Alignment objects.
-        
+
         Args:
             regs: mem_alnreg_v structure with alignment regions
             seq: query sequence string
@@ -745,11 +777,13 @@ class BwaAligner(object):
                 if aln_ptr != ffi.NULL and aln_ptr.rid >= 0:
                     # Build CIGAR
                     cigar = self._build_cigar(aln_ptr.cigar, aln_ptr.n_cigar)
-                    
+
                     # Get reference info
-                    ctg_name = ffi.string(self.index.bns.anns[aln_ptr.rid].name).decode()
+                    ctg_name = ffi.string(
+                        self.index.bns.anns[aln_ptr.rid].name
+                    ).decode()
                     ctg_len = self.index.bns.anns[aln_ptr.rid].len
-                    
+
                     # Create alignment
                     alignment = Alignment(
                         ctg=ctg_name,
@@ -853,7 +887,7 @@ class BwaAligner(object):
 
     def _build_cigar(self, cigar_array, n_cigar):
         """Build CIGAR list from CIGAR array.
-        
+
         Returns:
             list: list of [length, op] pairs
         """

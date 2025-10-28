@@ -1,9 +1,9 @@
-from bwamem.libbwa import BwaAligner, BwaIndexer, Alignment, PairedAlignment
-from bwamem.fastx_reader import FastxRead, fastx_read, read_paired_fastx, FastxReader
+from bwamem.fastx_reader import FastxRead, FastxReader, fastx_read, read_paired_fastx
+from bwamem.libbwa import Alignment, BwaAligner, BwaIndexer, PairedAlignment
 
 __all__ = [
     "BwaAligner",
-    "BwaIndexer", 
+    "BwaIndexer",
     "Alignment",
     "PairedAlignment",
     "FastxRead",
