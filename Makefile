@@ -15,7 +15,7 @@ venv/bin/activate:
 
 bwa/libbwa.a:
 	${SEDI} 's/int\ bwa_verbose\ =\ 3;/int\ bwa_verbose\ =\ 2;/' bwa/bwa.c
-	${SEDI} 's/CFLAGS=.*/CFLAGS=-g\ -Wall\ -Wno-unused-function\ -O2\ -fPIC/' bwa/Makefile
+	${SEDI} 's/CFLAGS=.*/CFLAGS=-g\ -Wall\ -Wno-unused-function\ -O2\ -fPIC\ -fno-finite-math-only/' bwa/Makefile
 	cd bwa && make libbwa.a 
 
 install: venv bwa/libbwa.a
