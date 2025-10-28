@@ -27,7 +27,7 @@ install-dev:  ## Install with development dependencies
 bwa-lib: bwa/libbwa.a  ## Build BWA static library
 
 bwa/libbwa.a:  ## Compile BWA C library with patches
-	${SEDI} 's/int\ bwa_verbose\ =\ 3;/int\ bwa_verbose\ =\ 1;/' bwa/bwa.c
+	${SEDI} 's/int bwa_verbose = [0-9];/int bwa_verbose = 1;/' bwa/bwa.c
 	${SEDI} 's/CFLAGS=.*/CFLAGS=-g\ -Wall\ -Wno-unused-function\ -O2\ -fPIC\ -fno-finite-math-only/' bwa/Makefile
 	cd bwa && make libbwa.a
 
