@@ -7,6 +7,9 @@
 
 #include "bwamem.h"
 
+// External BWA global variable for verbosity control
+extern int bwa_verbose;
+
 static PyMethodDef module_functions[] = {{NULL, NULL, 0, NULL}};
 
 #if PY_MAJOR_VERSION >= 3
@@ -31,6 +34,9 @@ static PyMethodDef module_functions[] = {{NULL, NULL, 0, NULL}};
 
 MOD_INIT(bwamemy) {
   PyObject* m;
+
+  // Set BWA verbosity to 1 (quiet mode - only warnings/errors)
+  bwa_verbose = 1;
 
   MOD_DEF(m, "bwalib", "High-level binding to bwa mem", module_functions)
 
