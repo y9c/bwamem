@@ -56,6 +56,29 @@ seq = aligner.seq('chr1')
 subseq = aligner.seq('chr1', start=100, end=200)
 ```
 
+### Monitor Index Building Progress
+
+```python
+from bwamem import BwaIndexer
+
+indexer = BwaIndexer()
+index_path = indexer.build_index('genome.fasta')
+
+# Check progress info
+progress = indexer.get_progress()
+print(f"Status: {progress['status']}")
+print(f"Iterations: {progress['iterations']}")
+print(f"Characters processed: {progress['characters_processed']}")
+
+# Get progress percentage (if available)
+if indexer.progress_percent:
+    print(f"Progress: {indexer.progress_percent:.1f}%")
+
+# Access all captured messages
+for msg in progress['messages']:
+    print(msg)
+```
+
 ### Read FASTA/FASTQ Files
 
 ```python

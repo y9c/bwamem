@@ -935,15 +935,28 @@ class BwaIndexer(object):
             )
 
         self.algo_type = algo_map[algorithm]
+        
+        # Progress tracking
+        self.progress = {
+            "status": "idle",
+            "text_length": 0,
+            "iterations": 0,
+            "characters_processed": 0,
+            "messages": [],
+        }
 
-    def build_index(self, fasta_file, prefix=None):
+    def build_index(self, fasta_file, prefix=None, capture_progress=True):
         """Build BWA index from FASTA file.
 
         :param fasta_file: Path to input FASTA file
         :param prefix: Output prefix for index files (default: same as FASTA file)
+        :param capture_progress: Capture progress messages (default: True)
         :returns: Path to the index prefix
         """
         import os
+        import sys
+        import re
+        from io import StringIO
 
         if not os.path.exists(fasta_file):
             raise FileNotFoundError(f"FASTA file not found: {fasta_file}")
@@ -952,19 +965,108 @@ class BwaIndexer(object):
             # Use FASTA filename without extension as prefix
             prefix = os.path.splitext(fasta_file)[0]
 
+        # Reset progress
+        self.progress = {
+            "status": "building",
+            "text_length": 0,
+            "iterations": 0,
+            "characters_processed": 0,
+            "messages": [],
+        }
+
         # Convert to bytes for C function
         fasta_bytes = fasta_file.encode("utf-8")
         prefix_bytes = prefix.encode("utf-8")
 
-        # Call the C function directly
-        result = libbwa.bwa_idx_build(
-            fasta_bytes, prefix_bytes, self.algo_type, self.block_size
-        )
+        if capture_progress:
+            # Capture stderr to parse progress messages
+            import subprocess
+            import threading
+            
+            # Create a pipe to capture stderr
+            read_fd, write_fd = os.pipe()
+            old_stderr = os.dup(2)  # Save original stderr
+            os.dup2(write_fd, 2)  # Redirect stderr to pipe
+            os.close(write_fd)
+            
+            # Thread to read from pipe
+            captured_lines = []
+            
+            def reader():
+                with os.fdopen(read_fd, 'r', errors='replace') as f:
+                    for line in f:
+                        captured_lines.append(line.rstrip())
+                        self._parse_progress_line(line)
+            
+            reader_thread = threading.Thread(target=reader, daemon=True)
+            reader_thread.start()
+            
+            try:
+                # Call the C function
+                result = libbwa.bwa_idx_build(
+                    fasta_bytes, prefix_bytes, self.algo_type, self.block_size
+                )
+            finally:
+                # Restore stderr
+                sys.stderr.flush()
+                os.dup2(old_stderr, 2)
+                os.close(old_stderr)
+                reader_thread.join(timeout=1)
+        else:
+            # Call without capturing
+            result = libbwa.bwa_idx_build(
+                fasta_bytes, prefix_bytes, self.algo_type, self.block_size
+            )
 
         if result != 0:
+            self.progress["status"] = "failed"
             raise RuntimeError(f"Failed to build BWA index for {fasta_file}")
 
+        self.progress["status"] = "completed"
         return prefix
+
+    def _parse_progress_line(self, line):
+        """Parse a progress line from BWA stderr output."""
+        import re
+        
+        # Store all messages
+        self.progress["messages"].append(line)
+        
+        # Parse text length
+        match = re.search(r'\[BWTIncCreate\] textLength=(\d+)', line)
+        if match:
+            self.progress["text_length"] = int(match.group(1))
+            return
+        
+        # Parse iteration progress
+        match = re.search(r'\[BWTIncConstructFromPacked\] (\d+) iterations done\. (\d+) characters processed', line)
+        if match:
+            self.progress["iterations"] = int(match.group(1))
+            self.progress["characters_processed"] = int(match.group(2))
+            return
+        
+        # Parse completion
+        if 'Finished constructing BWT' in line:
+            match = re.search(r'(\d+) iterations', line)
+            if match:
+                self.progress["iterations"] = int(match.group(1))
+    
+    def get_progress(self):
+        """Get current indexing progress.
+        
+        :returns: Dictionary with progress information
+        """
+        return self.progress.copy()
+    
+    @property
+    def progress_percent(self):
+        """Get progress as percentage (if text_length is known).
+        
+        :returns: Float percentage (0-100) or None if not available
+        """
+        if self.progress["text_length"] > 0 and self.progress["characters_processed"] > 0:
+            return (self.progress["characters_processed"] / self.progress["text_length"]) * 100
+        return None
 
     def build_index_with_options(
         self, fasta_file, prefix=None, algorithm=None, block_size=None
