@@ -14,7 +14,7 @@ venv/bin/activate:
 	${IN_VENV} && pip install pip --upgrade
 
 bwa/libbwa.a:
-	${SEDI} 's/int\ bwa_verbose\ =\ 3;/int\ bwa_verbose\ =\ 2;/' bwa/bwa.c
+	${SEDI} 's/int\ bwa_verbose\ =\ 3;/int\ bwa_verbose\ =\ 1;/' bwa/bwa.c
 	${SEDI} 's/CFLAGS=.*/CFLAGS=-g\ -Wall\ -Wno-unused-function\ -O2\ -fPIC\ -fno-finite-math-only/' bwa/Makefile
 	cd bwa && make libbwa.a 
 
