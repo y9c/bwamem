@@ -66,7 +66,7 @@ extensions = [
             "-march=native",
             "-mtune=native",
             "-O3",
-            "-ffast-math",
+            "-fno-finite-math-only",
             "-funroll-loops",
             "-DUSE_SSE2",
             "-DNDEBUG",
