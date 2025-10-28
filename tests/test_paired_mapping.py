@@ -58,7 +58,7 @@ def test_paired_end_mapping():
 
     try:
         # Read paired FASTQ files
-        paired_reads = list(bwamem.read_paired_fastq(r1_file, r2_file))
+        paired_reads = list(bwamem.read_paired_fastx(r1_file, r2_file))
         print(f"✅ Read {len(paired_reads)} paired reads")
 
         # Process each pair
@@ -105,7 +105,7 @@ def test_single_end_mapping():
 
     try:
         # Read single FASTQ file
-        reads = list(bwamem.read_fastq("tests/demo_reads_R1.fastq"))
+        reads = list(bwamem.fastx_read("tests/demo_reads_R1.fastq"))
         print(f"✅ Read {len(reads)} single reads")
 
         # Initialize aligner (reuse index from previous test)

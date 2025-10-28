@@ -483,6 +483,58 @@ class BwaAligner(object):
                 pass
         # No additional opt memory to free
 
+    def seq(self, name: str, start: int = 0, end: int = 0x7fffffff) -> str | None:
+        """Retrieve a (sub)sequence from the index.
+        
+        Args:
+            name: Contig/reference name
+            start: Start position (0-based, inclusive)
+            end: End position (0-based, exclusive, default: end of sequence)
+            
+        Returns:
+            Subsequence as a string, or None if name not found or coordinates invalid
+        """
+        # Find the sequence by name
+        seq_id = -1
+        for i in range(self.index.bns.n_seqs):
+            seq_name = ffi.string(self.index.bns.anns[i].name).decode()
+            if seq_name == name:
+                seq_id = i
+                break
+        
+        if seq_id < 0:
+            return None
+        
+        # Get sequence info
+        ann = self.index.bns.anns[seq_id]
+        seq_len = ann.len
+        seq_offset = ann.offset
+        
+        # Validate and adjust coordinates
+        if start < 0:
+            start = 0
+        if end > seq_len:
+            end = seq_len
+        if start >= end or start >= seq_len:
+            return None
+        
+        # Extract sequence from packed format (2-bit encoding)
+        # BWA stores sequences as 2-bit encoded: A=0, C=1, G=2, T=3
+        result = []
+        base_chars = 'ACGT'
+        
+        for pos in range(start, end):
+            # Calculate position in packed array
+            global_pos = seq_offset + pos
+            byte_pos = global_pos >> 2  # Divide by 4
+            bit_offset = (3 - (global_pos & 3)) << 1  # 6, 4, 2, or 0
+            
+            # Extract 2 bits and convert to base
+            base_code = (self.index.pac[byte_pos] >> bit_offset) & 3
+            result.append(base_chars[base_code])
+        
+        return ''.join(result)
+    
     def align(self, seq1: str, seq2: str = None):
         """Align one or two sequences to the index.
 

@@ -46,6 +46,30 @@ for pe_aln in paired_alignments:
     print(f'Insert size: {pe_aln.insert_size}, Proper pair: {pe_aln.is_proper_pair}')
 ```
 
+### Retrieve Sequences from Index
+
+```python
+# Get full sequence
+seq = aligner.seq('chr1')
+
+# Get subsequence
+subseq = aligner.seq('chr1', start=100, end=200)
+```
+
+### Read FASTA/FASTQ Files
+
+```python
+from bwamem import fastx_read, read_paired_fastx
+
+# Single-end (supports both FASTA and FASTQ)
+for read in fastx_read('sequences.fasta.gz'):
+    print(f'{read.name}: {read.sequence}')
+
+# Paired-end
+for read1, read2 in read_paired_fastx('R1.fastq', 'R2.fastq'):
+    print(f'{read1.name}, {read2.name}')
+```
+
 ### Custom Options
 
 ```python
