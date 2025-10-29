@@ -948,7 +948,7 @@ class BwaIndexer(object):
             )
 
         self.algo_type = algo_map[algorithm]
-        
+
         # Progress tracking
         self.progress = {
             "status": "idle",
@@ -999,27 +999,28 @@ class BwaIndexer(object):
             old_stderr = os.dup(2)
             os.dup2(write_fd, 2)
             os.close(write_fd)
-            
+
             def reader():
                 """Read stderr in separate thread to prevent pipe deadlock."""
-                with os.fdopen(read_fd, 'r', errors='replace') as f:
+                with os.fdopen(read_fd, "r", errors="replace") as f:
                     for line in f:
                         line = line.rstrip()
                         if line:
                             self._parse_progress_line(line)
-            
+
             reader_thread = threading.Thread(target=reader, daemon=True)
             reader_thread.start()
-            
+
             try:
                 result = libbwa.bwa_idx_build(
                     fasta_bytes, prefix_bytes, self.algo_type, self.block_size
                 )
             finally:
                 sys.stderr.flush()
+                os.close(2)
+                reader_thread.join(timeout=5)
                 os.dup2(old_stderr, 2)
                 os.close(old_stderr)
-                reader_thread.join(timeout=1)
         else:
             result = libbwa.bwa_idx_build(
                 fasta_bytes, prefix_bytes, self.algo_type, self.block_size
@@ -1036,43 +1037,50 @@ class BwaIndexer(object):
         """Parse a progress line from BWA stderr output."""
         # Store all messages
         self.progress["messages"].append(line)
-        
+
         # Parse text length
-        match = re.search(r'\[BWTIncCreate\] textLength=(\d+)', line)
+        match = re.search(r"\[BWTIncCreate\] textLength=(\d+)", line)
         if match:
             self.progress["text_length"] = int(match.group(1))
             return
-        
+
         # Parse iteration progress
-        match = re.search(r'\[BWTIncConstructFromPacked\] (\d+) iterations done\. (\d+) characters processed', line)
+        match = re.search(
+            r"\[BWTIncConstructFromPacked\] (\d+) iterations done\. (\d+) characters processed",
+            line,
+        )
         if match:
             self.progress["iterations"] = int(match.group(1))
             self.progress["characters_processed"] = int(match.group(2))
             return
-        
+
         # Parse completion
-        if 'Finished constructing BWT' in line:
-            match = re.search(r'(\d+) iterations', line)
+        if "Finished constructing BWT" in line:
+            match = re.search(r"(\d+) iterations", line)
             if match:
                 self.progress["iterations"] = int(match.group(1))
-    
+
     def get_progress(self):
         """Get current indexing progress.
-        
+
         :returns: Dictionary with progress information
         """
         return self.progress.copy()
-    
+
     @property
     def progress_percent(self):
         """Get progress as percentage (if text_length is known).
-        
+
         :returns: Float percentage (0-100) or None if not available
         """
-        if self.progress["text_length"] > 0 and self.progress["characters_processed"] > 0:
-            return (self.progress["characters_processed"] / self.progress["text_length"]) * 100
+        if (
+            self.progress["text_length"] > 0
+            and self.progress["characters_processed"] > 0
+        ):
+            return (
+                self.progress["characters_processed"] / self.progress["text_length"]
+            ) * 100
         return None
-
 
 
 def get_parser():
