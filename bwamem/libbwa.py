@@ -964,7 +964,7 @@ class BwaIndexer(object):
         """
         import os
         import sys
-        import tempfile
+        import threading
 
         if not os.path.exists(fasta_file):
             raise FileNotFoundError(f"FASTA file not found: {fasta_file}")
@@ -990,41 +990,38 @@ class BwaIndexer(object):
         libbwa.bwa_verbose = int(self.verbose)
 
         if self.capture_progress:
-            # Capture stderr to a temporary file
-            with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.log') as tmp:
-                tmp_path = tmp.name
+            # Use os.pipe() to capture stderr from C code
+            # Threading is necessary because:
+            # 1. C code writes to stderr (file descriptor 2)
+            # 2. Pipe buffers are limited (~64KB)
+            # 3. If we don't read continuously, the pipe fills and C code blocks
+            # 4. We can't read after C completes because data is streamed
+            read_fd, write_fd = os.pipe()
+            old_stderr = os.dup(2)
+            os.dup2(write_fd, 2)
+            os.close(write_fd)
             
-            try:
-                # Redirect stderr to temp file
-                old_stderr = os.dup(2)
-                tmp_fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
-                os.dup2(tmp_fd, 2)
-                os.close(tmp_fd)
-                
-                # Call the C function
-                result = libbwa.bwa_idx_build(
-                    fasta_bytes, prefix_bytes, self.algo_type, self.block_size
-                )
-                
-                # Restore stderr
-                sys.stderr.flush()
-                os.dup2(old_stderr, 2)
-                os.close(old_stderr)
-                
-                # Read and parse the captured output
-                with open(tmp_path, 'r', errors='replace') as f:
+            def reader():
+                """Read stderr in separate thread to prevent pipe deadlock."""
+                with os.fdopen(read_fd, 'r', errors='replace') as f:
                     for line in f:
                         line = line.rstrip()
                         if line:
                             self._parse_progress_line(line)
+            
+            reader_thread = threading.Thread(target=reader, daemon=True)
+            reader_thread.start()
+            
+            try:
+                result = libbwa.bwa_idx_build(
+                    fasta_bytes, prefix_bytes, self.algo_type, self.block_size
+                )
             finally:
-                # Clean up temp file
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
+                sys.stderr.flush()
+                os.dup2(old_stderr, 2)
+                os.close(old_stderr)
+                reader_thread.join(timeout=1)
         else:
-            # Call without capturing
             result = libbwa.bwa_idx_build(
                 fasta_bytes, prefix_bytes, self.algo_type, self.block_size
             )
