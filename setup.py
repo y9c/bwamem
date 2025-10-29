@@ -63,12 +63,10 @@ extensions = [
             "-pedantic",
             "-Wall",
             "-std=c99",
-            "-march=native",
-            "-mtune=native",
+            "-march=x86-64-v2",  # Modern baseline: SSE4.2, works on all CPUs since ~2009, compatible with WSL2/macOS
             "-O3",
             "-fno-finite-math-only",
             "-funroll-loops",
-            "-DUSE_SSE2",
             "-DNDEBUG",
         ],
         extra_link_args=[
