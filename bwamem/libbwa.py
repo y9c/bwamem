@@ -945,12 +945,13 @@ class BwaIndexer(object):
             "messages": [],
         }
 
-    def build_index(self, fasta_file, prefix=None, capture_progress=True):
+    def build_index(self, fasta_file, prefix=None, capture_progress=True, verbose=1):
         """Build BWA index from FASTA file.
 
         :param fasta_file: Path to input FASTA file
         :param prefix: Output prefix for index files (default: same as FASTA file)
         :param capture_progress: Capture progress messages (default: True)
+        :param verbose: BWA verbosity level (0=silent, 1=quiet, 2=normal, 3+=debug; default: 1)
         :returns: Path to the index prefix
         """
         import os
@@ -977,6 +978,9 @@ class BwaIndexer(object):
         # Convert to bytes for C function
         fasta_bytes = fasta_file.encode("utf-8")
         prefix_bytes = prefix.encode("utf-8")
+
+        # Set BWA verbosity level
+        libbwa.bwa_verbose = int(verbose)
 
         if capture_progress:
             # Capture stderr to parse progress messages
@@ -1069,7 +1073,8 @@ class BwaIndexer(object):
         return None
 
     def build_index_with_options(
-        self, fasta_file, prefix=None, algorithm=None, block_size=None
+        self, fasta_file, prefix=None, algorithm=None, block_size=None,
+        capture_progress=True, verbose=1
     ):
         """Build BWA index with specific options.
 
@@ -1077,6 +1082,8 @@ class BwaIndexer(object):
         :param prefix: Output prefix for index files
         :param algorithm: BWT construction algorithm ('auto', 'rb2', 'bwtsw', 'is')
         :param block_size: Block size for bwtsw algorithm
+        :param capture_progress: Capture progress messages (default: True)
+        :param verbose: BWA verbosity level (0=silent, 1=quiet, 2=normal, 3+=debug; default: 1)
         :returns: Path to the index prefix
         """
         # Temporarily override instance settings
@@ -1102,7 +1109,7 @@ class BwaIndexer(object):
             self.block_size = block_size
 
         try:
-            result = self.build_index(fasta_file, prefix)
+            result = self.build_index(fasta_file, prefix, capture_progress, verbose)
         finally:
             # Restore original settings
             self.algorithm = old_algorithm

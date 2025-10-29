@@ -62,6 +62,7 @@ subseq = aligner.seq('chr1', start=100, end=200)
 from bwamem import BwaIndexer
 
 indexer = BwaIndexer()
+# Progress messages are captured by default (no console spam)
 index_path = indexer.build_index('genome.fasta')
 
 # Check progress info
@@ -77,6 +78,29 @@ if indexer.progress_percent:
 # Access all captured messages
 for msg in progress['messages']:
     print(msg)
+```
+
+### Control Index Building Verbosity
+
+```python
+from bwamem import BwaIndexer
+
+indexer = BwaIndexer()
+
+# Verbosity levels:
+# 0 = silent (no output)
+# 1 = quiet (only warnings/errors) - default
+# 2 = normal (standard BWA messages)
+# 3+ = debug (verbose output)
+
+# Silent mode
+indexer.build_index('genome.fasta', verbose=0)
+
+# Normal mode with progress messages shown in console
+indexer.build_index('genome.fasta', verbose=2, capture_progress=False)
+
+# Debug mode
+indexer.build_index('genome.fasta', verbose=3)
 ```
 
 ### Read FASTA/FASTQ Files
