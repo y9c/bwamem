@@ -236,10 +236,21 @@ ffi.cdef("""
   mem_aln_t *mem_reg2aln_ptr(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_seq, const char *seq, const mem_alnreg_t *ar);
 
   ///////////////////
+  // Sequence structure for PE processing
+  //
+  typedef struct {
+    int l_seq, id;
+    char *name, *comment, *seq, *qual, *sam;
+  } bseq1_t;
+
+  ///////////////////
   // Paired-end alignment functions
   //
   void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int n, const mem_alnreg_v *regs, mem_pestat_t pes[4]);
   int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], uint64_t id, bseq1_t s[2], mem_alnreg_v a[2]);
+  int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], const mem_alnreg_t *a, int l_ms, const uint8_t *ms, mem_alnreg_v *ma);
+  int mem_pair(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], bseq1_t s[2], mem_alnreg_v a[2], int id, int *sub, int *n_sub, int z[2], int n_pri[2]);
+  int mem_mark_primary_se(const mem_opt_t *opt, int n, mem_alnreg_t *a, int64_t id);
 
   ///////////////////
   // Index building
@@ -659,21 +670,29 @@ class BwaAligner(object):
         return tuple(alignments)
 
     def _align_paired_end(self, seq1: str, seq2: str):
-        """Perform paired-end alignment."""
-        # If an insert_model was set on the aligner, use it to override per-call args
+        """Perform paired-end alignment with proper BWA logic.
+        
+        This implements the standard BWA-MEM PE workflow:
+        1. Align each read independently (mem_align1)
+        2. Infer insert size distribution (mem_pestat)
+        3. Perform mate rescue via Smith-Waterman (mem_matesw)
+        4. Mark primary alignments (mem_mark_primary_se)
+        5. Pair alignments properly (mem_pair)
+        """
+        # Get insert size model
         eff_insert_size = None
         eff_insert_std = None
         eff_insert_min = None
         eff_insert_max = None
         if getattr(self, "_insert_model", None) is not None:
             model = self._insert_model
-            # model = (mean, std, max) or (mean, std, max, min)
             eff_insert_size = float(model[0])
             eff_insert_std = float(model[1])
             eff_insert_max = int(model[2])
             if len(model) >= 4:
                 eff_insert_min = int(model[3])
-        # Get alignment regions for both reads
+        
+        # Step 1: Get alignment regions for both reads
         regs1 = libbwa.mem_align1(
             self.opt,
             self.index.bwt,
@@ -696,20 +715,17 @@ class BwaAligner(object):
         regs_array[0] = regs1
         regs_array[1] = regs2
 
-        # Set up insert size distribution
+        # Step 2: Set up insert size distribution
         pes = ffi.new("mem_pestat_t[4]")
         if eff_insert_size is not None:
-            # Use provided insert size
+            # Use provided insert size (FR orientation is index 1)
             pes[1].failed = 0
             pes[1].avg = eff_insert_size
-            pes[1].std = (
-                eff_insert_std if eff_insert_std is not None else eff_insert_size * 0.1
-            )
+            pes[1].std = eff_insert_std if eff_insert_std is not None else eff_insert_size * 0.1
             pes[1].high = int(pes[1].avg + 4.0 * pes[1].std + 0.499)
             pes[1].low = int(pes[1].avg - 4.0 * pes[1].std + 0.499)
             if pes[1].low < 1:
                 pes[1].low = 1
-            # Apply explicit min/max overrides if given
             if eff_insert_max is not None:
                 pes[1].high = int(eff_insert_max)
             if eff_insert_min is not None:
@@ -719,51 +735,88 @@ class BwaAligner(object):
             with suppress_stderr():
                 libbwa.mem_pestat(self.opt, self.index.bns.l_pac, 2, regs_array, pes)
 
-        # Skip mem_sam_pe; construct paired alignments from regions
+        # Step 3: Perform mate rescue (if not disabled)
+        if not (self.opt.flag & 0x20):  # MEM_F_NO_RESCUE = 0x20
+            # Encode sequences as uint8
+            seq1_enc = self._encode_seq(seq1)
+            seq2_enc = self._encode_seq(seq2)
+            
+            # Try mate SW for top hits of each read
+            max_matesw = min(self.opt.max_matesw, regs1.n, regs2.n)
+            for j in range(max_matesw):
+                if j < regs1.n and regs1.a[j].score >= regs1.a[0].score - self.opt.pen_unpaired:
+                    libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
+                                     ffi.addressof(regs1.a[j]), len(seq2), seq2_enc, ffi.addressof(regs2))
+                if j < regs2.n and regs2.a[j].score >= regs2.a[0].score - self.opt.pen_unpaired:
+                    libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
+                                     ffi.addressof(regs2.a[j]), len(seq1), seq1_enc, ffi.addressof(regs1))
 
-        # Parse the results (this is simplified - in practice you'd parse the SAM output)
-        # For now, return basic paired-end information
+        # Step 4: Mark primary alignments
+        n_pri = ffi.new("int[2]")
+        n_pri[0] = libbwa.mem_mark_primary_se(self.opt, regs1.n, regs1.a, 0)
+        n_pri[1] = libbwa.mem_mark_primary_se(self.opt, regs2.n, regs2.a, 1)
+
+        # Step 5: Pair alignments (if both reads have primary hits)
+        z = ffi.new("int[2]")
+        z[0] = z[1] = 0
+        if n_pri[0] > 0 and n_pri[1] > 0:
+            # Create bseq1_t structures for mem_pair
+            s = ffi.new("bseq1_t[2]")
+            s[0].l_seq = len(seq1)
+            s[0].seq = ffi.new("char[]", seq1.encode())
+            s[1].l_seq = len(seq2)
+            s[1].seq = ffi.new("char[]", seq2.encode())
+            
+            subo = ffi.new("int*")
+            n_sub = ffi.new("int*")
+            
+            # Find best pairing
+            pair_score = libbwa.mem_pair(self.opt, self.index.bns, self.index.pac, pes,
+                                        s, regs_array, 0, subo, n_sub, z, n_pri)
+
+        # Convert regions to alignments
         paired_alignments = []
-
-        # Convert regions to single alignments for each read
         read1_alignments = self._convert_regions_to_alignments(regs1, seq1, 1)
         read2_alignments = self._convert_regions_to_alignments(regs2, seq2, 2)
+        
+        # Create paired alignments (preferring the paired hits from mem_pair)
+        if z[0] < len(read1_alignments) and z[1] < len(read2_alignments):
+            # Best pair found by mem_pair
+            aln1 = read1_alignments[z[0]]
+            aln2 = read2_alignments[z[1]]
+            is_proper = self._is_proper_pair(aln1, aln2, pes, len(seq1), len(seq2),
+                                            eff_insert_size, eff_insert_std, eff_insert_min, eff_insert_max)
+            insert_size_val = self._calculate_insert_size(aln1, aln2, len(seq1), len(seq2)) if is_proper else None
+            paired_alignments.append(PairedAlignment(read1=aln1, read2=aln2, is_proper_pair=is_proper, insert_size=insert_size_val))
+        
+        # Also add other combinations as alternatives
+        for aln1 in read1_alignments:
+            for aln2 in read2_alignments:
+                # Skip the main pair we already added
+                if z[0] < len(read1_alignments) and z[1] < len(read2_alignments):
+                    if aln1 == read1_alignments[z[0]] and aln2 == read2_alignments[z[1]]:
+                        continue
+                is_proper = self._is_proper_pair(aln1, aln2, pes, len(seq1), len(seq2),
+                                                eff_insert_size, eff_insert_std, eff_insert_min, eff_insert_max)
+                insert_size_val = self._calculate_insert_size(aln1, aln2, len(seq1), len(seq2)) if is_proper else None
+                paired_alignments.append(PairedAlignment(read1=aln1, read2=aln2, is_proper_pair=is_proper, insert_size=insert_size_val))
+
         # Free mem_alnreg arrays
         if regs1.a != ffi.NULL:
             libbwa.free(regs1.a)
         if regs2.a != ffi.NULL:
             libbwa.free(regs2.a)
 
-        # Create paired alignments
-        for aln1 in read1_alignments:
-            for aln2 in read2_alignments:
-                # Check if this is a proper pair
-                is_proper = self._is_proper_pair(
-                    aln1,
-                    aln2,
-                    pes,
-                    len(seq1),
-                    len(seq2),
-                    eff_insert_size,
-                    eff_insert_std,
-                    eff_insert_min,
-                    eff_insert_max,
-                )
-                insert_size_val = (
-                    self._calculate_insert_size(aln1, aln2, len(seq1), len(seq2))
-                    if is_proper
-                    else None
-                )
-
-                paired_aln = PairedAlignment(
-                    read1=aln1,
-                    read2=aln2,
-                    is_proper_pair=is_proper,
-                    insert_size=insert_size_val,
-                )
-                paired_alignments.append(paired_aln)
-
         return tuple(paired_alignments)
+    
+    def _encode_seq(self, seq: str):
+        """Encode DNA sequence to uint8 array (A=0, C=1, G=2, T=3, N=4)."""
+        enc_map = {'A': 0, 'C': 1, 'G': 2, 'T': 3, 'N': 4,
+                   'a': 0, 'c': 1, 'g': 2, 't': 3, 'n': 4}
+        enc = ffi.new("uint8_t[]", len(seq))
+        for i, base in enumerate(seq):
+            enc[i] = enc_map.get(base, 4)  # Default to N
+        return enc
 
     def _convert_regions_to_alignments(self, regs, seq, read_num):
         """Convert alignment regions to Alignment objects.
