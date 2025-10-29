@@ -912,14 +912,24 @@ class BwaIndexer(object):
     BWTALGO_BWTSW = 2
     BWTALGO_IS = 3
 
-    def __init__(self, algorithm="auto", block_size=10000000):
+    def __init__(
+        self,
+        algorithm="auto",
+        block_size=10000000,
+        capture_progress=True,
+        verbose=1,
+    ):
         """Initialize BWA indexer.
 
-        :param algorithm: BWT construction algorithm ('auto', 'rb2', 'bwtsw', 'is')
-        :param block_size: Block size for bwtsw algorithm (in bytes)
+        :param algorithm: BWT construction algorithm ('auto', 'rb2', 'bwtsw', 'is'; default: 'auto')
+        :param block_size: Block size for bwtsw algorithm in bytes (default: 10000000)
+        :param capture_progress: Capture progress messages during indexing (default: True)
+        :param verbose: BWA verbosity level - 0=silent, 1=quiet, 2=normal, 3+=debug (default: 1)
         """
         self.algorithm = algorithm
         self.block_size = block_size
+        self.capture_progress = capture_progress
+        self.verbose = verbose
 
         # Convert algorithm string to integer
         algo_map = {
@@ -945,29 +955,16 @@ class BwaIndexer(object):
             "messages": [],
         }
 
-    def build_index(
-        self,
-        fasta_file,
-        prefix=None,
-        algorithm=None,
-        block_size=None,
-        capture_progress=True,
-        verbose=1,
-    ):
+    def build_index(self, fasta_file, prefix=None):
         """Build BWA index from FASTA file.
 
         :param fasta_file: Path to input FASTA file
         :param prefix: Output prefix for index files (default: same as FASTA file)
-        :param algorithm: BWT construction algorithm ('auto', 'rb2', 'bwtsw', 'is'; default: use instance setting)
-        :param block_size: Block size for bwtsw algorithm (default: use instance setting)
-        :param capture_progress: Capture progress messages (default: True)
-        :param verbose: BWA verbosity level (0=silent, 1=quiet, 2=normal, 3+=debug; default: 1)
         :returns: Path to the index prefix
         """
         import os
         import sys
-        import re
-        from io import StringIO
+        import threading
 
         if not os.path.exists(fasta_file):
             raise FileNotFoundError(f"FASTA file not found: {fasta_file}")
@@ -975,27 +972,6 @@ class BwaIndexer(object):
         if prefix is None:
             # Use FASTA filename without extension as prefix
             prefix = os.path.splitext(fasta_file)[0]
-
-        # Determine algorithm and block_size to use
-        algo_type = self.algo_type
-        block_size_val = self.block_size
-
-        if algorithm is not None:
-            algo_map = {
-                "auto": self.BWTALGO_AUTO,
-                "rb2": self.BWTALGO_RB2,
-                "bwtsw": self.BWTALGO_BWTSW,
-                "is": self.BWTALGO_IS,
-            }
-            if algorithm not in algo_map:
-                raise ValueError(
-                    f"Unknown algorithm '{algorithm}'. "
-                    f"Choose from: {list(algo_map.keys())}"
-                )
-            algo_type = algo_map[algorithm]
-
-        if block_size is not None:
-            block_size_val = block_size
 
         # Reset progress
         self.progress = {
@@ -1011,13 +987,10 @@ class BwaIndexer(object):
         prefix_bytes = prefix.encode("utf-8")
 
         # Set BWA verbosity level
-        libbwa.bwa_verbose = int(verbose)
+        libbwa.bwa_verbose = int(self.verbose)
 
-        if capture_progress:
+        if self.capture_progress:
             # Capture stderr to parse progress messages
-            import subprocess
-            import threading
-            
             # Create a pipe to capture stderr
             read_fd, write_fd = os.pipe()
             old_stderr = os.dup(2)  # Save original stderr
@@ -1039,7 +1012,7 @@ class BwaIndexer(object):
             try:
                 # Call the C function
                 result = libbwa.bwa_idx_build(
-                    fasta_bytes, prefix_bytes, algo_type, block_size_val
+                    fasta_bytes, prefix_bytes, self.algo_type, self.block_size
                 )
             finally:
                 # Restore stderr
@@ -1050,7 +1023,7 @@ class BwaIndexer(object):
         else:
             # Call without capturing
             result = libbwa.bwa_idx_build(
-                fasta_bytes, prefix_bytes, algo_type, block_size_val
+                fasta_bytes, prefix_bytes, self.algo_type, self.block_size
             )
 
         if result != 0:
