@@ -234,6 +234,8 @@ ffi.cdef("""
   mem_aln_t mem_reg2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_seq, const char *seq, const mem_alnreg_t *ar);
   // Wrapper that returns a pointer to avoid bitfield-return limitation
   mem_aln_t *mem_reg2aln_ptr(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_seq, const char *seq, const mem_alnreg_t *ar);
+  // Fast C-based sequence encoding using BWA's native nst_nt4_table
+  uint8_t *encode_seq(const char *seq, int len);
 
   ///////////////////
   // Sequence structure for PE processing
@@ -737,9 +739,9 @@ class BwaAligner(object):
 
         # Step 3: Perform mate rescue (if not disabled)
         if not (self.opt.flag & 0x20):  # MEM_F_NO_RESCUE = 0x20
-            # Encode sequences as uint8
-            seq1_enc = self._encode_seq(seq1)
-            seq2_enc = self._encode_seq(seq2)
+            # Encode sequences using BWA's native C encoding (much faster than Python)
+            seq1_enc = libbwa.encode_seq(seq1.encode(), len(seq1))
+            seq2_enc = libbwa.encode_seq(seq2.encode(), len(seq2))
             
             # Try mate SW for top hits of each read
             max_matesw = min(self.opt.max_matesw, regs1.n, regs2.n)
@@ -750,6 +752,10 @@ class BwaAligner(object):
                 if j < regs2.n and regs2.a[j].score >= regs2.a[0].score - self.opt.pen_unpaired:
                     libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
                                      ffi.addressof(regs2.a[j]), len(seq1), seq1_enc, ffi.addressof(regs1))
+            
+            # Free allocated encoded sequences
+            libbwa.free(seq1_enc)
+            libbwa.free(seq2_enc)
 
         # Step 4: Mark primary alignments
         n_pri = ffi.new("int[2]")
@@ -808,15 +814,6 @@ class BwaAligner(object):
             libbwa.free(regs2.a)
 
         return tuple(paired_alignments)
-    
-    def _encode_seq(self, seq: str):
-        """Encode DNA sequence to uint8 array (A=0, C=1, G=2, T=3, N=4)."""
-        enc_map = {'A': 0, 'C': 1, 'G': 2, 'T': 3, 'N': 4,
-                   'a': 0, 'c': 1, 'g': 2, 't': 3, 'n': 4}
-        enc = ffi.new("uint8_t[]", len(seq))
-        for i, base in enumerate(seq):
-            enc[i] = enc_map.get(base, 4)  # Default to N
-        return enc
 
     def _convert_regions_to_alignments(self, regs, seq, read_num):
         """Convert alignment regions to Alignment objects.

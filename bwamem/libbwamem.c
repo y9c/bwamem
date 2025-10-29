@@ -152,3 +152,22 @@ MODULE_API mem_aln_t* mem_reg2aln_ptr(
   *out = mem_reg2aln(opt, bns, pac, l_seq, seq, ar);
   return out;
 }
+
+// BWA's nucleotide encoding table
+extern unsigned char nst_nt4_table[256];
+
+// Fast C-based sequence encoding using BWA's native table
+// Converts ASCII sequence to 0-3 encoding (A=0, C=1, G=2, T=3, N=4)
+// Returns allocated uint8_t array that caller must free()
+MODULE_API uint8_t* encode_seq(const char* seq, int len) {
+  uint8_t* enc = (uint8_t*)malloc(len * sizeof(uint8_t));
+  if (enc == NULL) return NULL;
+  
+  int i;
+  for (i = 0; i < len; ++i) {
+    // Use BWA's native encoding table
+    enc[i] = nst_nt4_table[(int)seq[i]];
+  }
+  
+  return enc;
+}
