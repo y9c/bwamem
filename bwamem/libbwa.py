@@ -238,14 +238,6 @@ ffi.cdef("""
   uint8_t *encode_seq(const char *seq, int len);
 
   ///////////////////
-  // Sequence structure for PE processing
-  //
-  typedef struct {
-    int l_seq, id;
-    char *name, *comment, *seq, *qual, *sam;
-  } bseq1_t;
-
-  ///////////////////
   // Paired-end alignment functions
   //
   void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int n, const mem_alnreg_v *regs, mem_pestat_t pes[4]);
