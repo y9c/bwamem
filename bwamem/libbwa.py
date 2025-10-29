@@ -989,16 +989,9 @@ class BwaIndexer(object):
         libbwa.bwa_verbose = int(self.verbose)
 
         if self.capture_progress:
-            # Use os.pipe() to capture stderr from C code
-            # Threading is necessary because:
-            # 1. C code writes to stderr (file descriptor 2)
-            # 2. Pipe buffers are limited (~64KB)
-            # 3. If we don't read continuously, the pipe fills and C code blocks
-            # 4. We can't read after C completes because data is streamed
             read_fd, write_fd = os.pipe()
             old_stderr = os.dup(2)
             os.dup2(write_fd, 2)
-            os.close(write_fd)
 
             def reader():
                 """Read stderr in separate thread to prevent pipe deadlock."""
@@ -1017,10 +1010,11 @@ class BwaIndexer(object):
                 )
             finally:
                 sys.stderr.flush()
-                os.close(2)
+                temp_stderr = os.dup(2)  # Save the current FD 2
+                os.dup2(old_stderr, 2)  # Restore original stderr NOW
+                os.close(temp_stderr)  # Close the pipe write end to signal EOF
+                os.close(old_stderr)  # Close the saved original stderr
                 reader_thread.join(timeout=5)
-                os.dup2(old_stderr, 2)
-                os.close(old_stderr)
         else:
             result = libbwa.bwa_idx_build(
                 fasta_bytes, prefix_bytes, self.algo_type, self.block_size
