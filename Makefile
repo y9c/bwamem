@@ -10,19 +10,8 @@ else
 SEDI=sed -i
 endif
 
-# Detect if uv is available, otherwise use pip
+# Detect if uv is available
 UV := $(shell command -v uv 2> /dev/null)
-ifdef UV
-    PIP_INSTALL = uv pip install
-    PIP_SYNC = uv sync
-    PIP_RUN = uv run
-    BUILD_CMD = uv build
-else
-    PIP_INSTALL = python3 -m pip install
-    PIP_SYNC = python3 -m pip install
-    PIP_RUN = python3 -m
-    BUILD_CMD = python3 -m build
-endif
 
 help:  ## Show this help message
 	@echo "Available commands:"
