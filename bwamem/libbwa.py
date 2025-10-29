@@ -2,6 +2,9 @@ import argparse
 import importlib
 import importlib.util
 import os
+import re
+import sys
+import threading
 from collections import namedtuple
 from contextlib import contextmanager
 
@@ -962,10 +965,6 @@ class BwaIndexer(object):
         :param prefix: Output prefix for index files (default: same as FASTA file)
         :returns: Path to the index prefix
         """
-        import os
-        import sys
-        import threading
-
         if not os.path.exists(fasta_file):
             raise FileNotFoundError(f"FASTA file not found: {fasta_file}")
 
@@ -1035,8 +1034,6 @@ class BwaIndexer(object):
 
     def _parse_progress_line(self, line):
         """Parse a progress line from BWA stderr output."""
-        import re
-        
         # Store all messages
         self.progress["messages"].append(line)
         
