@@ -1014,7 +1014,7 @@ class BwaIndexer(object):
                 os.dup2(old_stderr, 2)  # Restore original stderr NOW
                 os.close(temp_stderr)  # Close the pipe write end to signal EOF
                 os.close(old_stderr)  # Close the saved original stderr
-                reader_thread.join(timeout=5)
+                reader_thread.join(timeout=1)
         else:
             result = libbwa.bwa_idx_build(
                 fasta_bytes, prefix_bytes, self.algo_type, self.block_size
