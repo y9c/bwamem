@@ -42,6 +42,10 @@ mem_opt_t* get_opts(int argc, char* argv[], bwaidx_t* idx) {
   // Change default verbosity to stop most stuff being written to stderr
   bwa_verbose = 0;
 
+  // Reset optind to allow multiple calls to get_opts in the same process
+  // (critical for Python library usage where multiple BwaAligner objects are created)
+  optind = 1;
+
   opt = mem_opt_init();
   memset(&opt0, 0, sizeof(mem_opt_t));
   while ((c = getopt(argc, argv, valid_opts)) >= 0) {

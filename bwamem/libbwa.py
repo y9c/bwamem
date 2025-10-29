@@ -416,6 +416,7 @@ class BwaAligner(object):
         index: str,
         options: str = "",
         *,
+        min_seed_len: int | None = None,
         min_score: int | None = None,
         softclip_supplementary: bool | None = None,
         mark_secondary: bool | None = None,
@@ -427,6 +428,7 @@ class BwaAligner(object):
 
         :param index: bwa index base path.
         :param options: alignment options as would be given on the bwa mem command line.
+        :param min_seed_len: equivalent to -k (minimum seed length; default: 19)
         :param min_score: equivalent to -T (minimum alignment score to output)
         :param softclip_supplementary: equivalent to -Y (soft-clip supplementary alignments)
         :param mark_secondary: equivalent to -M (mark shorter split hits as secondary)
@@ -440,6 +442,8 @@ class BwaAligner(object):
 
         # Compose CLI-style options from explicit kwargs
         extra_opts: list[str] = []
+        if min_seed_len is not None:
+            extra_opts += ["-k", str(int(min_seed_len))]
         if softclip_supplementary:
             extra_opts += ["-Y"]
         if mark_secondary:
