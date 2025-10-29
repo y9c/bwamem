@@ -945,11 +945,21 @@ class BwaIndexer(object):
             "messages": [],
         }
 
-    def build_index(self, fasta_file, prefix=None, capture_progress=True, verbose=1):
+    def build_index(
+        self,
+        fasta_file,
+        prefix=None,
+        algorithm=None,
+        block_size=None,
+        capture_progress=True,
+        verbose=1,
+    ):
         """Build BWA index from FASTA file.
 
         :param fasta_file: Path to input FASTA file
         :param prefix: Output prefix for index files (default: same as FASTA file)
+        :param algorithm: BWT construction algorithm ('auto', 'rb2', 'bwtsw', 'is'; default: use instance setting)
+        :param block_size: Block size for bwtsw algorithm (default: use instance setting)
         :param capture_progress: Capture progress messages (default: True)
         :param verbose: BWA verbosity level (0=silent, 1=quiet, 2=normal, 3+=debug; default: 1)
         :returns: Path to the index prefix
@@ -965,6 +975,27 @@ class BwaIndexer(object):
         if prefix is None:
             # Use FASTA filename without extension as prefix
             prefix = os.path.splitext(fasta_file)[0]
+
+        # Determine algorithm and block_size to use
+        algo_type = self.algo_type
+        block_size_val = self.block_size
+
+        if algorithm is not None:
+            algo_map = {
+                "auto": self.BWTALGO_AUTO,
+                "rb2": self.BWTALGO_RB2,
+                "bwtsw": self.BWTALGO_BWTSW,
+                "is": self.BWTALGO_IS,
+            }
+            if algorithm not in algo_map:
+                raise ValueError(
+                    f"Unknown algorithm '{algorithm}'. "
+                    f"Choose from: {list(algo_map.keys())}"
+                )
+            algo_type = algo_map[algorithm]
+
+        if block_size is not None:
+            block_size_val = block_size
 
         # Reset progress
         self.progress = {
@@ -1008,7 +1039,7 @@ class BwaIndexer(object):
             try:
                 # Call the C function
                 result = libbwa.bwa_idx_build(
-                    fasta_bytes, prefix_bytes, self.algo_type, self.block_size
+                    fasta_bytes, prefix_bytes, algo_type, block_size_val
                 )
             finally:
                 # Restore stderr
@@ -1019,7 +1050,7 @@ class BwaIndexer(object):
         else:
             # Call without capturing
             result = libbwa.bwa_idx_build(
-                fasta_bytes, prefix_bytes, self.algo_type, self.block_size
+                fasta_bytes, prefix_bytes, algo_type, block_size_val
             )
 
         if result != 0:
@@ -1072,58 +1103,6 @@ class BwaIndexer(object):
             return (self.progress["characters_processed"] / self.progress["text_length"]) * 100
         return None
 
-    def build_index_with_options(
-        self, fasta_file, prefix=None, algorithm=None, block_size=None,
-        capture_progress=True, verbose=1
-    ):
-        """Build BWA index with specific options.
-
-        :param fasta_file: Path to input FASTA file
-        :param prefix: Output prefix for index files
-        :param algorithm: BWT construction algorithm ('auto', 'rb2', 'bwtsw', 'is')
-        :param block_size: Block size for bwtsw algorithm
-        :param capture_progress: Capture progress messages (default: True)
-        :param verbose: BWA verbosity level (0=silent, 1=quiet, 2=normal, 3+=debug; default: 1)
-        :returns: Path to the index prefix
-        """
-        # Temporarily override instance settings
-        old_algorithm = self.algorithm
-        old_block_size = self.block_size
-
-        if algorithm is not None:
-            self.algorithm = algorithm
-            algo_map = {
-                "auto": self.BWTALGO_AUTO,
-                "rb2": self.BWTALGO_RB2,
-                "bwtsw": self.BWTALGO_BWTSW,
-                "is": self.BWTALGO_IS,
-            }
-            if algorithm not in algo_map:
-                raise ValueError(
-                    f"Unknown algorithm '{algorithm}'. "
-                    f"Choose from: {list(algo_map.keys())}"
-                )
-            self.algo_type = algo_map[algorithm]
-
-        if block_size is not None:
-            self.block_size = block_size
-
-        try:
-            result = self.build_index(fasta_file, prefix, capture_progress, verbose)
-        finally:
-            # Restore original settings
-            self.algorithm = old_algorithm
-            self.block_size = old_block_size
-            if algorithm is not None:
-                algo_map = {
-                    "auto": self.BWTALGO_AUTO,
-                    "rb2": self.BWTALGO_RB2,
-                    "bwtsw": self.BWTALGO_BWTSW,
-                    "is": self.BWTALGO_IS,
-                }
-                self.algo_type = algo_map[self.algorithm]
-
-        return result
 
 
 def get_parser():
