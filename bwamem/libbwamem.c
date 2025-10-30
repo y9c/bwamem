@@ -119,7 +119,7 @@ mem_aln_v* align(mem_opt_t* opt, bwaidx_t* idx, char* seq) {
   mem_alnreg_v ar = mem_align1(opt, idx->bwt, idx->bns, idx->pac, seq_len, seq);
 
   // check if we take all or only primary alignments
-  int take_all = opt->flag | MEM_F_ALL;
+  int take_all = opt->flag & MEM_F_ALL;
   size_t n_alns = take_all ? ar.n : count_primary(&ar);
 
   // allocate memory for the result if there any
@@ -228,13 +228,21 @@ MODULE_API char* build_cigar_string(const uint32_t* cigar, int n_cigar) {
   char* result = (char*)malloc((len + 1) * sizeof(char)); // +1 for null terminator
   if (result == NULL) return NULL;
   
-  static const char op_chars[] = "MIDSH";
+  // Extended op_chars to handle all possible CIGAR operations
+  // BAM spec: M=0, I=1, D=2, N=3, S=4, H=5, P=6, =7, X=8, B=9
+  static const char op_chars[] = "MIDNSHP=XB";
   char* ptr = result;
   int i;
   
   for (i = 0; i < n_cigar; ++i) {
     uint32_t op_len = cigar[i] >> 4;
     uint32_t op = cigar[i] & 0xF;
+    
+    // Bounds check for operation code
+    if (op >= sizeof(op_chars) - 1) {
+      // Invalid operation code - use '?' as placeholder
+      op = '?';
+    }
     
     // Convert length to string
     if (op_len == 0) {
@@ -255,7 +263,11 @@ MODULE_API char* build_cigar_string(const uint32_t* cigar, int n_cigar) {
     }
     
     // Add operation character
-    *ptr++ = op_chars[op];
+    if (op == '?') {
+      *ptr++ = '?';
+    } else {
+      *ptr++ = op_chars[op];
+    }
   }
   
   *ptr = '\0';

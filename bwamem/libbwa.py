@@ -7,6 +7,7 @@ import sys
 import threading
 from collections import namedtuple
 from contextlib import contextmanager
+from typing import Optional, Tuple
 
 from cffi import FFI
 
@@ -38,6 +39,7 @@ def get_shared_lib(name):
 
     :returns: FFI shared library object.
     """
+    lib_file = None
     try:
         # after 'python setup.py install' we should be able to do this
         lib_file = importlib.import_module(name).__file__
@@ -50,10 +52,12 @@ def get_shared_lib(name):
             lib_file = spec.origin
         except Exception:
             raise ImportError('Cannot locate C library "{}".'.format(name))
-        else:
-            lib_file = os.path.abspath(lib_file)
-    finally:
-        library = ffi.dlopen(lib_file)
+    
+    if lib_file is None:
+        raise ImportError(f'Cannot locate C library "{name}".')
+    
+    lib_file = os.path.abspath(lib_file)
+    library = ffi.dlopen(lib_file)
     return library
 
 
@@ -430,14 +434,14 @@ class BwaAligner(object):
         index: str,
         options: str = "",
         *,
-        min_seed_len: int | None = None,
-        max_occ: int | None = None,
-        min_score: int | None = None,
-        softclip_supplementary: bool | None = None,
-        mark_secondary: bool | None = None,
-        clip_penalties: tuple[int, int] | None = None,
-        unpaired_penalty: int | None = None,
-        insert_model: tuple | None = None,
+        min_seed_len: Optional[int] = None,
+        max_occ: Optional[int] = None,
+        min_score: Optional[int] = None,
+        softclip_supplementary: Optional[bool] = None,
+        mark_secondary: Optional[bool] = None,
+        clip_penalties: Optional[Tuple[int, int]] = None,
+        unpaired_penalty: Optional[int] = None,
+        insert_model: Optional[tuple] = None,
     ):
         """Interface to bwa mem alignment.
 
@@ -538,7 +542,7 @@ class BwaAligner(object):
                 pass
         # No additional opt memory to free
 
-    def seq(self, name: str, start: int = 0, end: int = 0x7FFFFFFF) -> str | None:
+    def seq(self, name: str, start: int = 0, end: int = 0x7FFFFFFF) -> Optional[str]:
         """Retrieve a (sub)sequence from the index.
 
         Args:
@@ -937,10 +941,10 @@ class BwaAligner(object):
         pes,
         len1: int,
         len2: int,
-        user_insert: float | None,
-        user_std: float | None,
-        user_min: int | None,
-        user_max: int | None,
+        user_insert: Optional[float],
+        user_std: Optional[float],
+        user_min: Optional[int],
+        user_max: Optional[int],
     ):
         """Check if two alignments form a proper FR pair with plausible insert size."""
         if aln1.ctg != aln2.ctg:
@@ -1220,7 +1224,7 @@ def main():
         options = " ".join(opts)
     aligner = BwaAligner(args.index, options=options)
     for i, seq in enumerate(args.sequence, 1):
-        alignments = aligner.align_seq(seq)
+        alignments = aligner.align(seq)
         print("Found {} alignments for input {}.".format(len(alignments), i))
         for aln in alignments:
             print("  ", aln)
