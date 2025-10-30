@@ -652,8 +652,8 @@ class BwaAligner(object):
                 query_span = reg.qe - reg.qb
                 ref_span = reg.re - reg.rb
                 if ref_span != query_span and query_span > 0:
-                    # Adjust reference end to match query span
-                    reg.re = reg.rb + query_span
+                    # Adjust reference end to match query span - modify directly in array
+                    regs.a[i].re = regs.a[i].rb + query_span
                 
                 aln_ptr = libbwa.mem_reg2aln_ptr(
                     self.opt,
@@ -661,7 +661,7 @@ class BwaAligner(object):
                     self.index.pac,
                     len(seq),
                     seq.encode(),
-                    ffi.addressof(reg),
+                    ffi.addressof(regs.a[i]),
                 )
                 if aln_ptr != ffi.NULL and aln_ptr.rid >= 0:  # Valid alignment
                     # Build CIGAR
@@ -906,8 +906,8 @@ class BwaAligner(object):
                 query_span = reg.qe - reg.qb
                 ref_span = reg.re - reg.rb
                 if ref_span != query_span and query_span > 0:
-                    # Adjust reference end to match query span
-                    reg.re = reg.rb + query_span
+                    # Adjust reference end to match query span - modify directly in array
+                    regs.a[i].re = regs.a[i].rb + query_span
                 
                 aln_ptr = libbwa.mem_reg2aln_ptr(
                     self.opt,
@@ -915,7 +915,7 @@ class BwaAligner(object):
                     self.index.pac,
                     len(seq),
                     seq.encode(),
-                    ffi.addressof(reg),
+                    ffi.addressof(regs.a[i]),
                 )
                 if aln_ptr != ffi.NULL and aln_ptr.rid >= 0:
                     # Build CIGAR
