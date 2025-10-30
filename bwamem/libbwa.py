@@ -688,7 +688,6 @@ class BwaAligner(object):
         4. Mark primary alignments (mem_mark_primary_se)
         5. Pair alignments properly (mem_pair)
         """
-        print(f"[PYTHON DEBUG START] _align_paired_end called with seq1 len={len(seq1)}, seq2 len={len(seq2)}", file=sys.stderr, flush=True)
         # Get insert size model
         eff_insert_size = None
         eff_insert_std = None
