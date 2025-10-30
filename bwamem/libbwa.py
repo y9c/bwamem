@@ -769,15 +769,27 @@ class BwaAligner(object):
                 """Check if sequence is safe for mate rescue."""
                 if len(seq) <= 0 or len(seq) > 10000:
                     return False
-                # Check for extreme GC content (>90%)
-                gc_count = seq.upper().count('G') + seq.upper().count('C')
+                seq_upper = seq.upper()
+                
+                # Check for extreme GC content (>95%)
+                gc_count = seq_upper.count('G') + seq_upper.count('C')
                 gc_ratio = gc_count / len(seq) if len(seq) > 0 else 0
-                if gc_ratio > 0.90:
+                if gc_ratio > 0.95:
                     return False
-                # Check for long homopolymer runs (>20bp)
+                
+                # Check for homopolymer runs (>= 7bp)
                 for base in 'ACGT':
-                    if base * 20 in seq.upper():
+                    if base * 7 in seq_upper:
                         return False
+                
+                # Check sequence complexity (using 3-mer diversity)
+                # Low-complexity sequences cause issues in SW alignment
+                if len(seq) >= 20:
+                    kmers = [seq_upper[i:i+3] for i in range(len(seq) - 2)]
+                    complexity = len(set(kmers)) / len(kmers) if kmers else 1.0
+                    if complexity < 0.25:  # <25% unique 3-mers = too repetitive
+                        return False
+                
                 return True
             
             # Only perform mate rescue if both sequences are safe
