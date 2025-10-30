@@ -604,7 +604,13 @@ class BwaAligner(object):
             return self._align_single_end(seq1)
         else:
             # Paired-end alignment
-            return self._align_paired_end(seq1, seq2)
+            try:
+                return self._align_paired_end(seq1, seq2)
+            except Exception as e:
+                print(f"[PYTHON DEBUG ERROR] Exception in _align_paired_end: {type(e).__name__}: {e}", file=sys.stderr)
+                import traceback
+                traceback.print_exc(file=sys.stderr)
+                raise
 
     def _align_single_end(self, seq: str):
         """Perform single-end alignment using the new BWA functions."""
@@ -682,6 +688,7 @@ class BwaAligner(object):
         4. Mark primary alignments (mem_mark_primary_se)
         5. Pair alignments properly (mem_pair)
         """
+        print(f"[PYTHON DEBUG START] _align_paired_end called with seq1 len={len(seq1)}, seq2 len={len(seq2)}", file=sys.stderr, flush=True)
         # Get insert size model
         eff_insert_size = None
         eff_insert_std = None
@@ -696,6 +703,7 @@ class BwaAligner(object):
                 eff_insert_min = int(model[3])
         
         # Step 1: Get alignment regions for both reads
+        print(f"[PYTHON DEBUG] Step 1: Getting initial alignments", file=sys.stderr, flush=True)
         regs1 = libbwa.mem_align1(
             self.opt,
             self.index.bwt,
@@ -712,6 +720,7 @@ class BwaAligner(object):
             len(seq2),
             seq2.encode(),
         )
+        print(f"[PYTHON DEBUG] Got regs1.n={regs1.n}, regs2.n={regs2.n}", file=sys.stderr, flush=True)
 
         # Create arrays for paired-end processing
         regs_array = ffi.new("mem_alnreg_v[2]")
@@ -753,27 +762,35 @@ class BwaAligner(object):
 
         # Step 3: Perform mate rescue (if not disabled)
         if not (self.opt.flag & 0x20):  # MEM_F_NO_RESCUE = 0x20
+            print(f"[PYTHON DEBUG] Mate rescue enabled. regs1.n={regs1.n}, regs2.n={regs2.n}", file=sys.stderr)
             # Encode sequences using BWA's native C encoding (much faster than Python)
             seq1_enc = libbwa.encode_seq(seq1.encode(), len(seq1))
             seq2_enc = libbwa.encode_seq(seq2.encode(), len(seq2))
             
             # Try mate SW for top hits of read1 to rescue read2
             max_matesw1 = min(self.opt.max_matesw, regs1.n)
+            print(f"[PYTHON DEBUG] Trying to rescue Read2: max_matesw1={max_matesw1}", file=sys.stderr)
             for j in range(max_matesw1):
                 if regs1.a[j].score >= regs1.a[0].score - self.opt.pen_unpaired:
+                    print(f"[PYTHON DEBUG] Calling mem_matesw to rescue Read2 from Read1[{j}]", file=sys.stderr)
                     libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
                                      ffi.addressof(regs1.a[j]), len(seq2), seq2_enc, ffi.addressof(regs2))
             
             # Try mate SW for top hits of read2 to rescue read1
             max_matesw2 = min(self.opt.max_matesw, regs2.n)
+            print(f"[PYTHON DEBUG] Trying to rescue Read1: max_matesw2={max_matesw2}", file=sys.stderr)
             for j in range(max_matesw2):
                 if regs2.a[j].score >= regs2.a[0].score - self.opt.pen_unpaired:
+                    print(f"[PYTHON DEBUG] Calling mem_matesw to rescue Read1 from Read2[{j}]", file=sys.stderr)
                     libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
                                      ffi.addressof(regs2.a[j]), len(seq1), seq1_enc, ffi.addressof(regs1))
             
             # Free allocated encoded sequences
             libbwa.free(seq1_enc)
             libbwa.free(seq2_enc)
+            print(f"[PYTHON DEBUG] After rescue: regs1.n={regs1.n}, regs2.n={regs2.n}", file=sys.stderr)
+        else:
+            print(f"[PYTHON DEBUG] Mate rescue DISABLED by flag", file=sys.stderr)
 
         # Step 4: Mark primary alignments
         n_pri = ffi.new("int[2]")
@@ -1103,7 +1120,8 @@ class BwaIndexer(object):
                     fasta_bytes, prefix_bytes, self.algo_type, self.block_size
                 )
             finally:
-                sys.stderr.flush()
+                if sys.stderr is not None:
+                    sys.stderr.flush()
                 temp_stderr = os.dup(2)  # Save the current FD 2
                 os.dup2(old_stderr, 2)  # Restore original stderr NOW
                 os.close(temp_stderr)  # Close the pipe write end to signal EOF

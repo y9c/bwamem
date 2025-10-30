@@ -139,6 +139,11 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 	extern int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, uint8_t *query, int n, mem_alnreg_t *a);
 	int64_t l_pac = bns->l_pac;
 	int i, r, skip[4], n = 0, rid;
+	
+	// DEBUG: ALWAYS print to verify code is running
+	fprintf(stderr, "[DEBUG] mem_matesw CALLED: anchor rid=%d, rb=%lld, re=%lld, existing_hits=%d\n", 
+			a->rid, (long long)a->rb, (long long)a->re, ma->n);
+	
 	for (r = 0; r < 4; ++r)
 		skip[r] = pes[r].failed? 1 : 0;
 	for (i = 0; i < ma->n; ++i) { // check which orinentation has been found
@@ -147,12 +152,22 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 		if (dist >= pes[r].low && dist <= pes[r].high)
 			skip[r] = 1;
 	}
+	
+	if (bwa_verbose >= 4) {
+		fprintf(stderr, "[DEBUG] mem_matesw: skip[] = {%d, %d, %d, %d}\n", skip[0], skip[1], skip[2], skip[3]);
+	}
+	
 	if (skip[0] + skip[1] + skip[2] + skip[3] == 4) return 0; // consistent pair exist; no need to perform SW
 	for (r = 0; r < 4; ++r) {
 		int is_rev, is_larger;
 		uint8_t *seq, *rev = 0, *ref = 0;
 		int64_t rb, re;
 		if (skip[r]) continue;
+		
+		if (bwa_verbose >= 4) {
+			fprintf(stderr, "[DEBUG] mem_matesw: trying orientation r=%d\n", r);
+		}
+		
 		is_rev = (r>>1 != (r&1)); // whether to reverse complement the mate
 		is_larger = !(r>>1); // whether the mate has larger coordinate
 		if (is_rev) {
@@ -169,12 +184,34 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 		}
 		if (rb < 0) rb = 0;
 		if (re > l_pac<<1) re = l_pac<<1;
+		
+		if (bwa_verbose >= 4) {
+			fprintf(stderr, "[DEBUG] mem_matesw: search window rb=%lld, re=%lld, size=%lld\n", (long long)rb, (long long)re, (long long)(re-rb));
+		}
+		
 		if (rb < re) ref = bns_fetch_seq(bns, pac, &rb, (rb+re)>>1, &re, &rid);
+		
+		if (bwa_verbose >= 4) {
+			fprintf(stderr, "[DEBUG] mem_matesw: fetched rid=%d (anchor rid=%d), rb=%lld, re=%lld, size=%lld\n", 
+					rid, a->rid, (long long)rb, (long long)re, (long long)(re-rb));
+		}
+		
 		if (a->rid == rid && re - rb >= opt->min_seed_len) { // no funny things happening
 			kswr_t aln;
 			mem_alnreg_t b;
 			int tmp, xtra = KSW_XSUBO | KSW_XSTART | (l_ms * opt->a < 250? KSW_XBYTE : 0) | (opt->min_seed_len * opt->a);
+			
+			if (bwa_verbose >= 4) {
+				fprintf(stderr, "[DEBUG] mem_matesw: calling ksw_align2 (min_seed_len=%d)\n", opt->min_seed_len);
+			}
+			
 			aln = ksw_align2(l_ms, seq, re - rb, ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, xtra, 0);
+			
+			if (bwa_verbose >= 4) {
+				fprintf(stderr, "[DEBUG] mem_matesw: SW score=%d, qb=%d, qe=%d, tb=%d, te=%d (threshold=%d)\n", 
+						aln.score, aln.qb, aln.qe, aln.tb, aln.te, opt->min_seed_len);
+			}
+			
 			memset(&b, 0, sizeof(mem_alnreg_t));
 			if (aln.score >= opt->min_seed_len && aln.qb >= 0) { // something goes wrong if aln.qb < 0
 				b.rid = a->rid;
@@ -187,6 +224,12 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 				b.csub = aln.score2;
 				b.secondary = -1;
 				b.seedcov = (b.re - b.rb < b.qe - b.qb? b.re - b.rb : b.qe - b.qb) >> 1;
+				
+				if (bwa_verbose >= 4) {
+					fprintf(stderr, "[DEBUG] mem_matesw: ✓ ADDING rescued hit! rid=%d, rb=%lld, re=%lld, score=%d\n", 
+							b.rid, (long long)b.rb, (long long)b.re, b.score);
+				}
+				
 //				printf("*** %d, [%lld,%lld], %d:%d, (%lld,%lld), (%lld,%lld) == (%lld,%lld)\n", aln.score, rb, re, is_rev, is_larger, a->rb, a->re, ma->a[0].rb, ma->a[0].re, b.rb, b.re);
 				kv_push(mem_alnreg_t, *ma, b); // make room for a new element
 				// move b s.t. ma is sorted
@@ -195,13 +238,19 @@ int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 				tmp = i;
 				for (i = ma->n - 1; i > tmp; --i) ma->a[i] = ma->a[i-1];
 				ma->a[i] = b;
+			} else if (bwa_verbose >= 4) {
+				fprintf(stderr, "[DEBUG] mem_matesw: ✗ SW hit REJECTED (score=%d < threshold=%d or qb=%d < 0)\n", 
+						aln.score, opt->min_seed_len, aln.qb);
 			}
 			++n;
+		} else if (bwa_verbose >= 4) {
+			fprintf(stderr, "[DEBUG] mem_matesw: ✗ SKIP SW (rid_mismatch=%d or window_too_small=%d)\n", 
+					(a->rid != rid), (re - rb < opt->min_seed_len));
 		}
-		if (n) ma->n = mem_sort_dedup_patch(opt, 0, 0, 0, ma->n, ma->a);
 		if (rev) free(rev);
 		free(ref);
 	}
+	if (n) ma->n = mem_sort_dedup_patch(opt, 0, 0, 0, ma->n, ma->a);
 	return n;
 }
 
