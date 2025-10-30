@@ -1,9 +1,7 @@
 """Tests for input validation."""
 
 import pytest
-import tempfile
-import os
-from bwamem import BwaAligner, BwaIndexer
+from bwamem import BwaIndexer
 
 
 def test_align_empty_sequence():
@@ -68,7 +66,7 @@ def test_indexer_verbosity_levels():
 def test_indexer_capture_progress_flag():
     """Test that capture_progress flag is respected."""
     indexer = BwaIndexer(capture_progress=True)
-    assert indexer.capture_progress == True
+    assert indexer.capture_progress is True
     
     indexer = BwaIndexer(capture_progress=False)
-    assert indexer.capture_progress == False
+    assert indexer.capture_progress is False

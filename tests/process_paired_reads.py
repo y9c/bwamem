@@ -12,10 +12,8 @@ Usage:
     python process_paired_reads.py
 """
 
-import gzip
 import os
 import sys
-from pathlib import Path
 
 # Add the parent directory to the path so we can import bwamem
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
