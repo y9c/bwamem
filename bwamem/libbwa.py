@@ -744,13 +744,17 @@ class BwaAligner(object):
             seq1_enc = libbwa.encode_seq(seq1.encode(), len(seq1))
             seq2_enc = libbwa.encode_seq(seq2.encode(), len(seq2))
             
-            # Try mate SW for top hits of each read
-            max_matesw = min(self.opt.max_matesw, regs1.n, regs2.n)
-            for j in range(max_matesw):
-                if j < regs1.n and regs1.a[j].score >= regs1.a[0].score - self.opt.pen_unpaired:
+            # Try mate SW for top hits of read1 to rescue read2
+            max_matesw1 = min(self.opt.max_matesw, regs1.n)
+            for j in range(max_matesw1):
+                if regs1.a[j].score >= regs1.a[0].score - self.opt.pen_unpaired:
                     libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
                                      ffi.addressof(regs1.a[j]), len(seq2), seq2_enc, ffi.addressof(regs2))
-                if j < regs2.n and regs2.a[j].score >= regs2.a[0].score - self.opt.pen_unpaired:
+            
+            # Try mate SW for top hits of read2 to rescue read1
+            max_matesw2 = min(self.opt.max_matesw, regs2.n)
+            for j in range(max_matesw2):
+                if regs2.a[j].score >= regs2.a[0].score - self.opt.pen_unpaired:
                     libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
                                      ffi.addressof(regs2.a[j]), len(seq1), seq1_enc, ffi.addressof(regs1))
             
