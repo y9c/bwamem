@@ -763,27 +763,46 @@ class BwaAligner(object):
 
         # Step 3: Perform mate rescue (if not disabled)
         if not (self.opt.flag & 0x20):  # MEM_F_NO_RESCUE = 0x20
-            # Encode sequences using BWA's native C encoding (much faster than Python)
-            seq1_enc = libbwa.encode_seq(seq1.encode(), len(seq1))
-            seq2_enc = libbwa.encode_seq(seq2.encode(), len(seq2))
+            # Safety check: skip mate rescue for sequences with extreme characteristics
+            # that may cause issues in Smith-Waterman alignment
+            def is_safe_for_matesw(seq):
+                """Check if sequence is safe for mate rescue."""
+                if len(seq) <= 0 or len(seq) > 10000:
+                    return False
+                # Check for extreme GC content (>90%)
+                gc_count = seq.upper().count('G') + seq.upper().count('C')
+                gc_ratio = gc_count / len(seq) if len(seq) > 0 else 0
+                if gc_ratio > 0.90:
+                    return False
+                # Check for long homopolymer runs (>20bp)
+                for base in 'ACGT':
+                    if base * 20 in seq.upper():
+                        return False
+                return True
             
-            # Try mate SW for top hits of read1 to rescue read2
-            max_matesw1 = min(self.opt.max_matesw, regs1.n)
-            for j in range(max_matesw1):
-                if regs1.a[j].score >= regs1.a[0].score - self.opt.pen_unpaired:
-                    libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
-                                     ffi.addressof(regs1.a[j]), len(seq2), seq2_enc, ffi.addressof(regs2))
-            
-            # Try mate SW for top hits of read2 to rescue read1
-            max_matesw2 = min(self.opt.max_matesw, regs2.n)
-            for j in range(max_matesw2):
-                if regs2.a[j].score >= regs2.a[0].score - self.opt.pen_unpaired:
-                    libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
-                                     ffi.addressof(regs2.a[j]), len(seq1), seq1_enc, ffi.addressof(regs1))
-            
-            # Free allocated encoded sequences
-            libbwa.free(seq1_enc)
-            libbwa.free(seq2_enc)
+            # Only perform mate rescue if both sequences are safe
+            if is_safe_for_matesw(seq1) and is_safe_for_matesw(seq2):
+                # Encode sequences using BWA's native C encoding (much faster than Python)
+                seq1_enc = libbwa.encode_seq(seq1.encode(), len(seq1))
+                seq2_enc = libbwa.encode_seq(seq2.encode(), len(seq2))
+                
+                # Try mate SW for top hits of read1 to rescue read2
+                max_matesw1 = min(self.opt.max_matesw, regs1.n)
+                for j in range(max_matesw1):
+                    if regs1.a[j].score >= regs1.a[0].score - self.opt.pen_unpaired:
+                        libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
+                                         ffi.addressof(regs1.a[j]), len(seq2), seq2_enc, ffi.addressof(regs2))
+                
+                # Try mate SW for top hits of read2 to rescue read1
+                max_matesw2 = min(self.opt.max_matesw, regs2.n)
+                for j in range(max_matesw2):
+                    if regs2.a[j].score >= regs2.a[0].score - self.opt.pen_unpaired:
+                        libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
+                                         ffi.addressof(regs2.a[j]), len(seq1), seq1_enc, ffi.addressof(regs1))
+                
+                # Free allocated encoded sequences
+                libbwa.free(seq1_enc)
+                libbwa.free(seq2_enc)
 
         # Step 4: Mark primary alignments
         n_pri = ffi.new("int[2]")
