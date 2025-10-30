@@ -860,14 +860,25 @@ class BwaAligner(object):
                     # Invalid query coordinates, skip this region
                     continue
                 
-                # Get contig length for reference coordinate validation
+                # Get contig info for reference coordinate validation
                 if reg.rid < 0 or reg.rid >= self.index.bns.n_seqs:
                     # Invalid reference ID, skip this region
                     continue
                 
-                ctg_len = self.index.bns.anns[reg.rid].len
-                if reg.rb < 0 or reg.re > ctg_len or reg.rb >= reg.re:
+                # rb and re are GLOBAL coordinates across concatenated reference
+                # Check if they form a valid span (rb < re)
+                if reg.rb < 0 or reg.rb >= reg.re:
                     # Invalid reference coordinates, skip this region
+                    continue
+                
+                # Get contig's global position range
+                ctg_offset = self.index.bns.anns[reg.rid].offset
+                ctg_len = self.index.bns.anns[reg.rid].len
+                ctg_end = ctg_offset + ctg_len
+                
+                # Validate that region falls within contig boundaries
+                if reg.rb < ctg_offset or reg.re > ctg_end:
+                    # Region extends outside contig boundaries, skip
                     continue
                 
                 # Fix mate rescue CIGAR issue: ensure reference span matches query span
