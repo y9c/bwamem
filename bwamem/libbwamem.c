@@ -171,3 +171,93 @@ MODULE_API uint8_t* encode_seq(const char* seq, int len) {
   
   return enc;
 }
+
+// Structure to hold CIGAR operation pairs [length, op]
+typedef struct {
+  uint32_t len;
+  uint32_t op;
+} cigar_pair_t;
+
+// Fast C-based CIGAR array builder
+// Converts BAM-encoded CIGAR (opLen<<4|op) to array of [length, op] pairs
+// Returns allocated array that caller must free()
+MODULE_API cigar_pair_t* build_cigar_array(const uint32_t* cigar, int n_cigar) {
+  if (n_cigar == 0 || cigar == NULL) return NULL;
+  
+  cigar_pair_t* result = (cigar_pair_t*)malloc(n_cigar * sizeof(cigar_pair_t));
+  if (result == NULL) return NULL;
+  
+  int i;
+  for (i = 0; i < n_cigar; ++i) {
+    result[i].len = cigar[i] >> 4;
+    result[i].op = cigar[i] & 0xF;
+  }
+  
+  return result;
+}
+
+// Get CIGAR string length (for pre-allocation)
+MODULE_API int get_cigar_str_len(const uint32_t* cigar, int n_cigar) {
+  if (n_cigar == 0 || cigar == NULL) return 0;
+  
+  int len = 0;
+  int i;
+  for (i = 0; i < n_cigar; ++i) {
+    uint32_t op_len = cigar[i] >> 4;
+    // Count digits in op_len + 1 for operation character
+    if (op_len == 0) {
+      len += 2; // "0" + op
+    } else {
+      uint32_t temp = op_len;
+      while (temp > 0) {
+        len++;
+        temp /= 10;
+      }
+      len++; // for operation character
+    }
+  }
+  return len;
+}
+
+// Build CIGAR string directly in C (faster than Python string building)
+MODULE_API char* build_cigar_string(const uint32_t* cigar, int n_cigar) {
+  if (n_cigar == 0 || cigar == NULL) return NULL;
+  
+  // Pre-calculate length needed
+  int len = get_cigar_str_len(cigar, n_cigar);
+  char* result = (char*)malloc((len + 1) * sizeof(char)); // +1 for null terminator
+  if (result == NULL) return NULL;
+  
+  static const char op_chars[] = "MIDSH";
+  char* ptr = result;
+  int i;
+  
+  for (i = 0; i < n_cigar; ++i) {
+    uint32_t op_len = cigar[i] >> 4;
+    uint32_t op = cigar[i] & 0xF;
+    
+    // Convert length to string
+    if (op_len == 0) {
+      *ptr++ = '0';
+    } else {
+      // Convert number to string in reverse
+      char temp[20];
+      int pos = 0;
+      uint32_t temp_len = op_len;
+      while (temp_len > 0) {
+        temp[pos++] = '0' + (temp_len % 10);
+        temp_len /= 10;
+      }
+      // Copy reversed digits
+      while (pos > 0) {
+        *ptr++ = temp[--pos];
+      }
+    }
+    
+    // Add operation character
+    *ptr++ = op_chars[op];
+  }
+  
+  *ptr = '\0';
+  return result;
+}

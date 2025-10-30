@@ -238,14 +238,6 @@ ffi.cdef("""
   uint8_t *encode_seq(const char *seq, int len);
 
   ///////////////////
-  // Sequence structure for PE processing
-  //
-  typedef struct {
-    int l_seq, id;
-    char *name, *comment, *seq, *qual, *sam;
-  } bseq1_t;
-
-  ///////////////////
   // Paired-end alignment functions
   //
   void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int n, const mem_alnreg_v *regs, mem_pestat_t pes[4]);
@@ -289,6 +281,15 @@ ffi.cdef("""
   void free(void *ptr);
   // Control BWA logging verbosity
   extern int bwa_verbose;
+  
+  // Fast C helper functions for performance
+  typedef struct {
+    uint32_t len;
+    uint32_t op;
+  } cigar_pair_t;
+  
+  cigar_pair_t* build_cigar_array(const uint32_t* cigar, int n_cigar);
+  char* build_cigar_string(const uint32_t* cigar, int n_cigar);
 """)
 
 
@@ -947,7 +948,7 @@ class BwaAligner(object):
         return None
 
     def _build_cigar(self, cigar_array, n_cigar):
-        """Build CIGAR list from CIGAR array.
+        """Build CIGAR list from CIGAR array using fast C implementation.
 
         Returns:
             list: list of [length, op] pairs
@@ -955,12 +956,19 @@ class BwaAligner(object):
         if n_cigar == 0:
             return []
 
+        # Use C function for faster processing
+        cigar_pairs = libbwa.build_cigar_array(cigar_array, n_cigar)
+        if cigar_pairs == ffi.NULL:
+            return []
+        
+        # Convert C array to Python list
         cigar_list = []
         for i in range(n_cigar):
-            op_len = cigar_array[i] >> 4
-            op = cigar_array[i] & 0xF
-            cigar_list.append([op_len, op])
-
+            cigar_list.append([cigar_pairs[i].len, cigar_pairs[i].op])
+        
+        # Free C-allocated memory
+        libbwa.free(cigar_pairs)
+        
         return cigar_list
 
 
