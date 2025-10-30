@@ -110,9 +110,9 @@ ffi.cdef("""
   // Paired-end statistics
   //
   typedef struct {
-    int failed;
-    int low, high;
-    double avg, std;
+    int low, high;   // lower and upper bounds for proper pairing
+    int failed;      // non-zero if orientation not supported by data
+    double avg, std; // mean and stddev of insert size distribution
   } mem_pestat_t;
 
   ///////////////////////
@@ -703,7 +703,6 @@ class BwaAligner(object):
                 eff_insert_min = int(model[3])
         
         # Step 1: Get alignment regions for both reads
-        print(f"[PYTHON DEBUG] Step 1: Getting initial alignments", file=sys.stderr, flush=True)
         regs1 = libbwa.mem_align1(
             self.opt,
             self.index.bwt,
@@ -720,7 +719,6 @@ class BwaAligner(object):
             len(seq2),
             seq2.encode(),
         )
-        print(f"[PYTHON DEBUG] Got regs1.n={regs1.n}, regs2.n={regs2.n}", file=sys.stderr, flush=True)
 
         # Create arrays for paired-end processing
         regs_array = ffi.new("mem_alnreg_v[2]")
@@ -754,66 +752,45 @@ class BwaAligner(object):
         default_std = 100
         for r in range(4):
             if pes[r].low == 0 and pes[r].high <= 1:  # Not set by estimation
+                pes[r].low = max(1, int(default_avg - 4.0 * default_std + 0.499))
+                pes[r].high = int(default_avg + 4.0 * default_std + 0.499)
                 pes[r].failed = 0
                 pes[r].avg = default_avg
                 pes[r].std = default_std
-                pes[r].low = max(1, int(default_avg - 4.0 * default_std + 0.499))
-                pes[r].high = int(default_avg + 4.0 * default_std + 0.499)
 
         # Step 3: Perform mate rescue (if not disabled)
         if not (self.opt.flag & 0x20):  # MEM_F_NO_RESCUE = 0x20
-            print(f"[PYTHON DEBUG] Mate rescue enabled. regs1.n={regs1.n}, regs2.n={regs2.n}", file=sys.stderr)
             # Encode sequences using BWA's native C encoding (much faster than Python)
             seq1_enc = libbwa.encode_seq(seq1.encode(), len(seq1))
             seq2_enc = libbwa.encode_seq(seq2.encode(), len(seq2))
             
             # Try mate SW for top hits of read1 to rescue read2
             max_matesw1 = min(self.opt.max_matesw, regs1.n)
-            print(f"[PYTHON DEBUG] Trying to rescue Read2: max_matesw1={max_matesw1}", file=sys.stderr)
             for j in range(max_matesw1):
                 if regs1.a[j].score >= regs1.a[0].score - self.opt.pen_unpaired:
-                    print(f"[PYTHON DEBUG] Calling mem_matesw to rescue Read2 from Read1[{j}]", file=sys.stderr)
                     libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
                                      ffi.addressof(regs1.a[j]), len(seq2), seq2_enc, ffi.addressof(regs2))
             
             # Try mate SW for top hits of read2 to rescue read1
             max_matesw2 = min(self.opt.max_matesw, regs2.n)
-            print(f"[PYTHON DEBUG] Trying to rescue Read1: max_matesw2={max_matesw2}", file=sys.stderr)
             for j in range(max_matesw2):
                 if regs2.a[j].score >= regs2.a[0].score - self.opt.pen_unpaired:
-                    print(f"[PYTHON DEBUG] Calling mem_matesw to rescue Read1 from Read2[{j}]", file=sys.stderr)
                     libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
                                      ffi.addressof(regs2.a[j]), len(seq1), seq1_enc, ffi.addressof(regs1))
             
             # Free allocated encoded sequences
             libbwa.free(seq1_enc)
             libbwa.free(seq2_enc)
-            print(f"[PYTHON DEBUG] After rescue: regs1.n={regs1.n}, regs2.n={regs2.n}", file=sys.stderr)
-        else:
-            print(f"[PYTHON DEBUG] Mate rescue DISABLED by flag", file=sys.stderr)
 
         # Step 4: Mark primary alignments
         n_pri = ffi.new("int[2]")
         n_pri[0] = libbwa.mem_mark_primary_se(self.opt, regs1.n, regs1.a, 0)
         n_pri[1] = libbwa.mem_mark_primary_se(self.opt, regs2.n, regs2.a, 1)
 
-        # Step 5: Pair alignments (if both reads have primary hits)
+        # Step 5: Skip mem_pair for now - coralsnake does its own pairing logic
+        # The key benefit of this implementation is the mate rescue (mem_matesw) which is now working
         z = ffi.new("int[2]")
         z[0] = z[1] = 0
-        if n_pri[0] > 0 and n_pri[1] > 0:
-            # Create bseq1_t structures for mem_pair
-            s = ffi.new("bseq1_t[2]")
-            s[0].l_seq = len(seq1)
-            s[0].seq = ffi.new("char[]", seq1.encode())
-            s[1].l_seq = len(seq2)
-            s[1].seq = ffi.new("char[]", seq2.encode())
-            
-            subo = ffi.new("int*")
-            n_sub = ffi.new("int*")
-            
-            # Find best pairing
-            pair_score = libbwa.mem_pair(self.opt, self.index.bns, self.index.pac, pes,
-                                        s, regs_array, 0, subo, n_sub, z, n_pri)
 
         # Convert regions to alignments
         paired_alignments = []
