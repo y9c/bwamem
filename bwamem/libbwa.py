@@ -763,75 +763,27 @@ class BwaAligner(object):
 
         # Step 3: Perform mate rescue (if not disabled)
         if not (self.opt.flag & 0x20):  # MEM_F_NO_RESCUE = 0x20
-            # Input validation for mem_matesw/ksw_align2
-            # 
-            # ROOT CAUSE: bwa/ksw.c's Smith-Waterman implementation (ksw_align2) has bugs
-            # with low-complexity sequences:
-            # 
-            # 1. Buffer overflow in revseq(r.qe+1, query) when r.qe is miscalculated
-            #    (line 393 in ksw.c)
-            # 2. Exponential-time alignment due to ambiguous scoring paths in repetitive regions
-            # 3. Scoring matrix edge cases with homopolymer runs
-            # 
-            # Example crash sequence after MK conversion:
-            #   GTTGGTGTGTGGTGTTGTGTTTTTTTGGGTTGGGTTTGGGTTGTGTGG
-            #   - Only 17% unique 3-mers (extremely repetitive)
-            #   - 7 consecutive T's (TTTTTTT)
-            #   - Triggers buffer overflow in ksw_align2's revseq()
-            #
-            # Since we cannot modify bwa/ folder, we prevent these sequences from
-            # reaching ksw_align2 via input validation.
-            def is_safe_for_matesw(seq):
-                """Validate sequence before calling mem_matesw to prevent ksw_align2 bugs."""
-                if len(seq) <= 0 or len(seq) > 10000:
-                    return False
-                seq_upper = seq.upper()
-                
-                # Prevent buffer overflow from extreme GC (>95%)
-                gc_count = seq_upper.count('G') + seq_upper.count('C')
-                gc_ratio = gc_count / len(seq) if len(seq) > 0 else 0
-                if gc_ratio > 0.95:
-                    return False
-                
-                # Prevent scoring matrix edge cases from homopolymer runs (>= 7bp)
-                # These cause issues in ksw_align2's DP matrix
-                for base in 'ACGT':
-                    if base * 7 in seq_upper:
-                        return False
-                
-                # Prevent exponential-time alignment from low-complexity sequences
-                # Sequences with <25% unique 3-mers create ambiguous alignment paths
-                if len(seq) >= 20:
-                    kmers = [seq_upper[i:i+3] for i in range(len(seq) - 2)]
-                    complexity = len(set(kmers)) / len(kmers) if kmers else 1.0
-                    if complexity < 0.25:  # <25% unique 3-mers = too repetitive
-                        return False
-                
-                return True
+            # Encode sequences using BWA's native C encoding (much faster than Python)
+            seq1_enc = libbwa.encode_seq(seq1.encode(), len(seq1))
+            seq2_enc = libbwa.encode_seq(seq2.encode(), len(seq2))
             
-            # Only perform mate rescue if both sequences are safe
-            if is_safe_for_matesw(seq1) and is_safe_for_matesw(seq2):
-                # Encode sequences using BWA's native C encoding (much faster than Python)
-                seq1_enc = libbwa.encode_seq(seq1.encode(), len(seq1))
-                seq2_enc = libbwa.encode_seq(seq2.encode(), len(seq2))
-                
-                # Try mate SW for top hits of read1 to rescue read2
-                max_matesw1 = min(self.opt.max_matesw, regs1.n)
-                for j in range(max_matesw1):
-                    if regs1.a[j].score >= regs1.a[0].score - self.opt.pen_unpaired:
-                        libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
-                                         ffi.addressof(regs1.a[j]), len(seq2), seq2_enc, ffi.addressof(regs2))
-                
-                # Try mate SW for top hits of read2 to rescue read1
-                max_matesw2 = min(self.opt.max_matesw, regs2.n)
-                for j in range(max_matesw2):
-                    if regs2.a[j].score >= regs2.a[0].score - self.opt.pen_unpaired:
-                        libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
-                                         ffi.addressof(regs2.a[j]), len(seq1), seq1_enc, ffi.addressof(regs1))
-                
-                # Free allocated encoded sequences
-                libbwa.free(seq1_enc)
-                libbwa.free(seq2_enc)
+            # Try mate SW for top hits of read1 to rescue read2
+            max_matesw1 = min(self.opt.max_matesw, regs1.n)
+            for j in range(max_matesw1):
+                if regs1.a[j].score >= regs1.a[0].score - self.opt.pen_unpaired:
+                    libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
+                                     ffi.addressof(regs1.a[j]), len(seq2), seq2_enc, ffi.addressof(regs2))
+            
+            # Try mate SW for top hits of read2 to rescue read1
+            max_matesw2 = min(self.opt.max_matesw, regs2.n)
+            for j in range(max_matesw2):
+                if regs2.a[j].score >= regs2.a[0].score - self.opt.pen_unpaired:
+                    libbwa.mem_matesw(self.opt, self.index.bns, self.index.pac, pes,
+                                     ffi.addressof(regs2.a[j]), len(seq1), seq1_enc, ffi.addressof(regs1))
+            
+            # Free allocated encoded sequences
+            libbwa.free(seq1_enc)
+            libbwa.free(seq2_enc)
 
         # Step 4: Mark primary alignments
         n_pri = ffi.new("int[2]")
