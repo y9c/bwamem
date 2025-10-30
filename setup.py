@@ -69,7 +69,7 @@ def get_compile_args():
     # Add architecture-specific flags only on x86-64
     machine = platform.machine().lower()
     if machine in ["x86_64", "amd64"]:
-        args.append("-march=x86-64-v2")  # Modern baseline: SSE4.2
+        args.append("-march=x86-64")  # Base x86-64 for maximum compatibility
     
     return args
 
