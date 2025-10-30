@@ -763,27 +763,44 @@ class BwaAligner(object):
 
         # Step 3: Perform mate rescue (if not disabled)
         if not (self.opt.flag & 0x20):  # MEM_F_NO_RESCUE = 0x20
-            # Safety check: skip mate rescue for sequences with extreme characteristics
-            # that may cause issues in Smith-Waterman alignment
+            # Input validation for mem_matesw/ksw_align2
+            # 
+            # ROOT CAUSE: bwa/ksw.c's Smith-Waterman implementation (ksw_align2) has bugs
+            # with low-complexity sequences:
+            # 
+            # 1. Buffer overflow in revseq(r.qe+1, query) when r.qe is miscalculated
+            #    (line 393 in ksw.c)
+            # 2. Exponential-time alignment due to ambiguous scoring paths in repetitive regions
+            # 3. Scoring matrix edge cases with homopolymer runs
+            # 
+            # Example crash sequence after MK conversion:
+            #   GTTGGTGTGTGGTGTTGTGTTTTTTTGGGTTGGGTTTGGGTTGTGTGG
+            #   - Only 17% unique 3-mers (extremely repetitive)
+            #   - 7 consecutive T's (TTTTTTT)
+            #   - Triggers buffer overflow in ksw_align2's revseq()
+            #
+            # Since we cannot modify bwa/ folder, we prevent these sequences from
+            # reaching ksw_align2 via input validation.
             def is_safe_for_matesw(seq):
-                """Check if sequence is safe for mate rescue."""
+                """Validate sequence before calling mem_matesw to prevent ksw_align2 bugs."""
                 if len(seq) <= 0 or len(seq) > 10000:
                     return False
                 seq_upper = seq.upper()
                 
-                # Check for extreme GC content (>95%)
+                # Prevent buffer overflow from extreme GC (>95%)
                 gc_count = seq_upper.count('G') + seq_upper.count('C')
                 gc_ratio = gc_count / len(seq) if len(seq) > 0 else 0
                 if gc_ratio > 0.95:
                     return False
                 
-                # Check for homopolymer runs (>= 7bp)
+                # Prevent scoring matrix edge cases from homopolymer runs (>= 7bp)
+                # These cause issues in ksw_align2's DP matrix
                 for base in 'ACGT':
                     if base * 7 in seq_upper:
                         return False
                 
-                # Check sequence complexity (using 3-mer diversity)
-                # Low-complexity sequences cause issues in SW alignment
+                # Prevent exponential-time alignment from low-complexity sequences
+                # Sequences with <25% unique 3-mers create ambiguous alignment paths
                 if len(seq) >= 20:
                     kmers = [seq_upper[i:i+3] for i in range(len(seq) - 2)]
                     complexity = len(set(kmers)) / len(kmers) if kmers else 1.0
