@@ -604,13 +604,7 @@ class BwaAligner(object):
             return self._align_single_end(seq1)
         else:
             # Paired-end alignment
-            try:
-                return self._align_paired_end(seq1, seq2)
-            except Exception as e:
-                print(f"[PYTHON DEBUG ERROR] Exception in _align_paired_end: {type(e).__name__}: {e}", file=sys.stderr)
-                import traceback
-                traceback.print_exc(file=sys.stderr)
-                raise
+            return self._align_paired_end(seq1, seq2)
 
     def _align_single_end(self, seq: str):
         """Perform single-end alignment using the new BWA functions."""
