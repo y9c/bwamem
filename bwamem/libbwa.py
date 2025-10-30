@@ -854,6 +854,22 @@ class BwaAligner(object):
             if regs.a[i].score >= self.opt.T:
                 reg = regs.a[i]
                 
+                # Validate region coordinates BEFORE calling mem_reg2aln_ptr to prevent crashes
+                # mem_matesw can create invalid regions on very short references
+                if reg.qb < 0 or reg.qe > len(seq) or reg.qb >= reg.qe:
+                    # Invalid query coordinates, skip this region
+                    continue
+                
+                # Get contig length for reference coordinate validation
+                if reg.rid < 0 or reg.rid >= self.index.bns.n_seqs:
+                    # Invalid reference ID, skip this region
+                    continue
+                
+                ctg_len = self.index.bns.anns[reg.rid].len
+                if reg.rb < 0 or reg.re > ctg_len or reg.rb >= reg.re:
+                    # Invalid reference coordinates, skip this region
+                    continue
+                
                 # Fix mate rescue CIGAR issue: ensure reference span matches query span
                 # mem_matesw can create regions where (re - rb) != (qe - qb), causing
                 # mem_reg2aln to insert spurious N operations. Adjust re to match query span.
