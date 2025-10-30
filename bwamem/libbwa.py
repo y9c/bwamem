@@ -602,7 +602,22 @@ class BwaAligner(object):
 
         :returns: If seq2 is None, returns tuple of :class:`Alignment` for single-end.
                  If seq2 is provided, returns tuple of :class:`PairedAlignment` for paired-end.
+        
+        :raises ValueError: If seq1 or seq2 are empty or contain only whitespace
+        :raises TypeError: If seq1 or seq2 are not strings
         """
+        # Input validation
+        if not isinstance(seq1, str):
+            raise TypeError("seq1 must be a string")
+        if seq1 is None or not seq1.strip():
+            raise ValueError("seq1 cannot be empty or whitespace")
+        
+        if seq2 is not None:
+            if not isinstance(seq2, str):
+                raise TypeError("seq2 must be a string")
+            if not seq2.strip():
+                raise ValueError("seq2 cannot be empty or whitespace")
+        
         if seq2 is None:
             # Single-end alignment
             return self._align_single_end(seq1)

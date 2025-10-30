@@ -160,13 +160,22 @@ extern unsigned char nst_nt4_table[256];
 // Converts ASCII sequence to 0-3 encoding (A=0, C=1, G=2, T=3, N=4)
 // Returns allocated uint8_t array that caller must free()
 MODULE_API uint8_t* encode_seq(const char* seq, int len) {
+  // Input validation
+  if (seq == NULL || len < 0) return NULL;
+  if (len == 0) {
+    // Return empty allocation for zero-length sequences
+    uint8_t* enc = (uint8_t*)malloc(1);
+    return enc;
+  }
+  
   uint8_t* enc = (uint8_t*)malloc(len * sizeof(uint8_t));
   if (enc == NULL) return NULL;
   
   int i;
   for (i = 0; i < len; ++i) {
     // Use BWA's native encoding table
-    enc[i] = nst_nt4_table[(int)seq[i]];
+    // The table safely handles all 256 possible byte values
+    enc[i] = nst_nt4_table[(unsigned char)seq[i]];
   }
   
   return enc;
