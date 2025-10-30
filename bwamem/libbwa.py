@@ -626,6 +626,16 @@ class BwaAligner(object):
         for i in range(regs.n):
             if regs.a[i].score >= self.opt.T:  # Only keep alignments above threshold
                 reg = regs.a[i]
+                
+                # Fix mate rescue CIGAR issue: ensure reference span matches query span
+                # mem_matesw can create regions where (re - rb) != (qe - qb), causing
+                # mem_reg2aln to insert spurious N operations. Adjust re to match query span.
+                query_span = reg.qe - reg.qb
+                ref_span = reg.re - reg.rb
+                if ref_span != query_span and query_span > 0:
+                    # Adjust reference end to match query span
+                    reg.re = reg.rb + query_span
+                
                 aln_ptr = libbwa.mem_reg2aln_ptr(
                     self.opt,
                     self.index.bns,
@@ -843,6 +853,16 @@ class BwaAligner(object):
         for i in range(regs.n):
             if regs.a[i].score >= self.opt.T:
                 reg = regs.a[i]
+                
+                # Fix mate rescue CIGAR issue: ensure reference span matches query span
+                # mem_matesw can create regions where (re - rb) != (qe - qb), causing
+                # mem_reg2aln to insert spurious N operations. Adjust re to match query span.
+                query_span = reg.qe - reg.qb
+                ref_span = reg.re - reg.rb
+                if ref_span != query_span and query_span > 0:
+                    # Adjust reference end to match query span
+                    reg.re = reg.rb + query_span
+                
                 aln_ptr = libbwa.mem_reg2aln_ptr(
                     self.opt,
                     self.index.bns,
