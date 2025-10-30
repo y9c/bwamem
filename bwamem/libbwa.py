@@ -720,6 +720,7 @@ class BwaAligner(object):
 
         # Step 2: Set up insert size distribution
         pes = ffi.new("mem_pestat_t[4]")
+        
         if eff_insert_size is not None:
             # Use provided insert size (FR orientation is index 1)
             pes[1].failed = 0
@@ -733,10 +734,22 @@ class BwaAligner(object):
                 pes[1].high = int(eff_insert_max)
             if eff_insert_min is not None:
                 pes[1].low = int(eff_insert_min)
-        else:
-            # Infer insert size from data
+        elif regs1.n > 0 and regs2.n > 0:
+            # Only try to infer if both reads have hits
             with suppress_stderr():
                 libbwa.mem_pestat(self.opt, self.index.bns.l_pac, 2, regs_array, pes)
+        
+        # If estimation failed or wasn't attempted, use BWA defaults for mate rescue
+        # (BWA's default: 200±100bp for all orientations)
+        default_avg = 200
+        default_std = 100
+        for r in range(4):
+            if pes[r].low == 0 and pes[r].high <= 1:  # Not set by estimation
+                pes[r].failed = 0
+                pes[r].avg = default_avg
+                pes[r].std = default_std
+                pes[r].low = max(1, int(default_avg - 4.0 * default_std + 0.499))
+                pes[r].high = int(default_avg + 4.0 * default_std + 0.499)
 
         # Step 3: Perform mate rescue (if not disabled)
         if not (self.opt.flag & 0x20):  # MEM_F_NO_RESCUE = 0x20
@@ -811,6 +824,17 @@ class BwaAligner(object):
                                                 eff_insert_size, eff_insert_std, eff_insert_min, eff_insert_max)
                 insert_size_val = self._calculate_insert_size(aln1, aln2, len(seq1), len(seq2)) if is_proper else None
                 paired_alignments.append(PairedAlignment(read1=aln1, read2=aln2, is_proper_pair=is_proper, insert_size=insert_size_val))
+        
+        # If no paired alignments, return unpaired alignments (one read mapped, other unmapped)
+        if not paired_alignments:
+            if read1_alignments and not read2_alignments:
+                # Only read1 mapped
+                for aln1 in read1_alignments:
+                    paired_alignments.append(PairedAlignment(read1=aln1, read2=None, is_proper_pair=False, insert_size=None))
+            elif read2_alignments and not read1_alignments:
+                # Only read2 mapped
+                for aln2 in read2_alignments:
+                    paired_alignments.append(PairedAlignment(read1=None, read2=aln2, is_proper_pair=False, insert_size=None))
 
         # Free mem_alnreg arrays
         if regs1.a != ffi.NULL:
