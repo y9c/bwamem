@@ -119,7 +119,7 @@ mem_aln_v* align(mem_opt_t* opt, bwaidx_t* idx, char* seq) {
   mem_alnreg_v ar = mem_align1(opt, idx->bwt, idx->bns, idx->pac, seq_len, seq);
 
   // check if we take all or only primary alignments
-  int take_all = opt->flag | MEM_F_ALL;
+  int take_all = opt->flag & MEM_F_ALL;
   size_t n_alns = take_all ? ar.n : count_primary(&ar);
 
   // allocate memory for the result if there any
@@ -160,13 +160,22 @@ extern unsigned char nst_nt4_table[256];
 // Converts ASCII sequence to 0-3 encoding (A=0, C=1, G=2, T=3, N=4)
 // Returns allocated uint8_t array that caller must free()
 MODULE_API uint8_t* encode_seq(const char* seq, int len) {
+  // Input validation
+  if (seq == NULL || len < 0) return NULL;
+  if (len == 0) {
+    // Return empty allocation for zero-length sequences
+    uint8_t* enc = (uint8_t*)malloc(1);
+    return enc;
+  }
+  
   uint8_t* enc = (uint8_t*)malloc(len * sizeof(uint8_t));
   if (enc == NULL) return NULL;
   
   int i;
   for (i = 0; i < len; ++i) {
     // Use BWA's native encoding table
-    enc[i] = nst_nt4_table[(int)seq[i]];
+    // The table safely handles all 256 possible byte values
+    enc[i] = nst_nt4_table[(unsigned char)seq[i]];
   }
   
   return enc;
@@ -228,13 +237,21 @@ MODULE_API char* build_cigar_string(const uint32_t* cigar, int n_cigar) {
   char* result = (char*)malloc((len + 1) * sizeof(char)); // +1 for null terminator
   if (result == NULL) return NULL;
   
-  static const char op_chars[] = "MIDSH";
+  // Extended op_chars to handle all possible CIGAR operations
+  // BAM spec: M=0, I=1, D=2, N=3, S=4, H=5, P=6, =7, X=8, B=9
+  static const char op_chars[] = "MIDNSHP=XB";
   char* ptr = result;
   int i;
   
   for (i = 0; i < n_cigar; ++i) {
     uint32_t op_len = cigar[i] >> 4;
     uint32_t op = cigar[i] & 0xF;
+    
+    // Bounds check for operation code
+    if (op >= sizeof(op_chars) - 1) {
+      // Invalid operation code - use '?' as placeholder
+      op = '?';
+    }
     
     // Convert length to string
     if (op_len == 0) {
@@ -255,7 +272,11 @@ MODULE_API char* build_cigar_string(const uint32_t* cigar, int n_cigar) {
     }
     
     // Add operation character
-    *ptr++ = op_chars[op];
+    if (op == '?') {
+      *ptr++ = '?';
+    } else {
+      *ptr++ = op_chars[op];
+    }
   }
   
   *ptr = '\0';

@@ -4,7 +4,6 @@ Tests for FASTA/FASTQ reader functionality.
 import os
 import tempfile
 import gzip
-import pytest
 from bwamem import fastx_read, FastxReader
 
 

@@ -158,7 +158,8 @@ mem_opt_t* get_opts(int argc, char* argv[], bwaidx_t* idx) {
         if (!opt0.pen_clip3) opt->pen_clip3 = 0;
       }
     } else {
-      return NULL;  // FIXME memory leak
+      free(opt);  // Free allocated memory before returning NULL
+      return NULL;  // Invalid mode
     }
   } else
     update_a(opt, &opt0);
