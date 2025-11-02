@@ -27,9 +27,10 @@ def test_paired_end_mapping():
     create_demo_files()
 
     # Check if files exist
-    ref_file = "tests/demo_reference.fasta"
-    r1_file = "tests/demo_reads_R1.fastq"
-    r2_file = "tests/demo_reads_R2.fastq"
+    test_dir = Path(__file__).parent
+    ref_file = str(test_dir / "test_data" / "demo" / "demo_reference.fasta")
+    r1_file = str(test_dir / "test_data" / "demo" / "demo_reads_R1.fastq")
+    r2_file = str(test_dir / "test_data" / "demo" / "demo_reads_R2.fastq")
 
     if not all(os.path.exists(f) for f in [ref_file, r1_file, r2_file]):
         pytest.fail("Demo files not created properly!")
@@ -40,7 +41,7 @@ def test_paired_end_mapping():
     print("\n🔨 Building BWA index...")
     try:
         indexer = bwamem.BwaIndexer()
-        index_path = indexer.build_index(ref_file, "tests/demo_index/demo_index")
+        index_path = indexer.build_index(ref_file, str(test_dir / "test_data" / "demo" / "demo_index"))
         print(f"✅ Index built successfully: {index_path}")
     except Exception as e:
         pytest.fail(f"Failed to build index: {e}")
@@ -105,11 +106,13 @@ def test_single_end_mapping():
 
     try:
         # Read single FASTQ file
-        reads = list(bwamem.fastx_read("tests/demo_reads_R1.fastq"))
+        test_dir = Path(__file__).parent
+        r1_file = str(test_dir / "test_data" / "demo" / "demo_reads_R1.fastq")
+        reads = list(bwamem.fastx_read(r1_file))
         print(f"✅ Read {len(reads)} single reads")
 
         # Initialize aligner (reuse index from previous test)
-        aligner = bwamem.BwaAligner("tests/demo_index/demo_index")
+        aligner = bwamem.BwaAligner(str(test_dir / "test_data" / "demo" / "demo_index"))
 
         # Process first read
         read = reads[0]
@@ -132,15 +135,16 @@ def test_single_end_mapping():
 
 def cleanup_demo_files():
     """Clean up demo files."""
+    test_dir = Path(__file__).parent
     files_to_remove = [
-        "demo_reference.fasta",
-        "demo_reads_R1.fastq",
-        "demo_reads_R2.fastq",
-        "tests/demo_index/demo_index.amb",
-        "tests/demo_index/demo_index.ann",
-        "tests/demo_index/demo_index.bwt",
-        "tests/demo_index/demo_index.pac",
-        "tests/demo_index/demo_index.sa",
+        str(test_dir / "test_data" / "demo" / "demo_reference.fasta"),
+        str(test_dir / "test_data" / "demo" / "demo_reads_R1.fastq"),
+        str(test_dir / "test_data" / "demo" / "demo_reads_R2.fastq"),
+        str(test_dir / "test_data" / "demo" / "demo_index.amb"),
+        str(test_dir / "test_data" / "demo" / "demo_index.ann"),
+        str(test_dir / "test_data" / "demo" / "demo_index.bwt"),
+        str(test_dir / "test_data" / "demo" / "demo_index.pac"),
+        str(test_dir / "test_data" / "demo" / "demo_index.sa"),
     ]
 
     for file in files_to_remove:

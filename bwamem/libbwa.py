@@ -299,6 +299,29 @@ ffi.cdef("""
   int64_t compute_r_en(int64_t r_st, const cigar_pair_t* cigar, int n_cigar);
   int compute_blen(const cigar_pair_t* cigar, int n_cigar);
   int compute_mlen(const cigar_pair_t* cigar, int n_cigar);
+  
+  // Visualization helper structures and functions (C implementation)
+  // Uses kstring_t from BWA for automatic memory management
+  typedef struct {
+    void *ref_aligned;   // kstring_t (opaque to Python)
+    void *query_aligned; // kstring_t (opaque to Python)
+  } aligned_seq_pair_t;
+  
+  void free_aligned_seq_pair(aligned_seq_pair_t *pair);
+  char *reverse_complement_seq(const char *seq, int len);
+  aligned_seq_pair_t *apply_cigar_to_sequences(
+    const char *ref_seq, int ref_len,
+    const char *query_seq, int query_len,
+    const cigar_pair_t *cigar, int n_cigar,
+    int q_st, int q_en);
+  char *build_match_indicators(const char *ref_aligned, const char *query_aligned, int len);
+  char *visualize_alignment_c(
+    const char *ctg, int64_t r_st, int64_t r_en, int strand, int score, int mapq,
+    const char *ref_seq, int ref_seq_len,
+    const char *query_seq, int query_seq_len,
+    const cigar_pair_t *cigar, int n_cigar,
+    int q_st, int q_en,
+    int line_width);
 """)
 
 
@@ -443,11 +466,142 @@ class Alignment:
             f"tp:A:{'P' if self.is_primary else 'S'}\tcg:Z:{self.cigar_str}"
         )
 
+    def visualize(self, query_seq: str, ref_seq_fn, line_width: int = 80):
+        """Visualize alignment as 3 rows: reference, match indicators, query.
+        
+        Fully implemented in C code for maximum performance. This function
+        calls a C implementation that handles all formatting and string building.
+        
+        Args:
+            query_seq: The original query sequence
+            ref_seq_fn: A function that takes (ctg, start, end) and returns reference sequence
+            line_width: Maximum characters per line (default: 80)
+            
+        Returns:
+            Multi-line string showing the alignment visualization
+            
+        Raises:
+            ValueError: If reference sequence cannot be retrieved or CIGAR is invalid
+            RuntimeError: If C visualization function fails
+        """
+        # Get reference sequence
+        ref_seq = ref_seq_fn(self.ctg, self.r_st, self.r_en)
+        if ref_seq is None:
+            raise ValueError(f"Could not retrieve reference sequence for {self.ctg}")
+        
+        # Prepare CIGAR array
+        cigar_c = self._get_cigar_c()
+        if cigar_c is None or not self.cigar:
+            raise ValueError("Invalid CIGAR data - cannot visualize alignment")
+        
+        # Convert sequences to bytes for C
+        ctg_bytes = self.ctg.encode('utf-8')
+        ref_bytes = ref_seq.encode('utf-8')
+        query_bytes = query_seq.encode('utf-8')
+        
+        # Call C visualization function
+        result_ptr = libbwa.visualize_alignment_c(
+            ctg_bytes,
+            self.r_st, self.r_en,
+            self.strand,
+            self.score, self.mapq,
+            ref_bytes, len(ref_bytes),
+            query_bytes, len(query_bytes),
+            cigar_c, len(self.cigar),
+            self.q_st, self.q_en,
+            line_width
+        )
+        
+        if result_ptr == ffi.NULL:
+            raise RuntimeError("C visualization function returned NULL - visualization failed")
+        
+        try:
+            result = ffi.string(result_ptr).decode('utf-8')
+            libbwa.free(result_ptr)
+            return result
+        except Exception as e:
+            libbwa.free(result_ptr)
+            raise RuntimeError(f"Error decoding visualization result: {e}") from e
+    
 
-# Paired-end alignment result
+
+# Paired-end alignment result (defined early for use in visualization function)
 PairedAlignment = namedtuple(
     "PairedAlignment", ["read1", "read2", "is_proper_pair", "insert_size"]
 )
+
+
+def visualize_paired_alignment(paired_aln: PairedAlignment, query_seq1: str, query_seq2: str, 
+                                aligner: 'BwaAligner', line_width: int = 80):
+    """Visualize a paired-end alignment as 3-row displays for both reads.
+    
+    Fully implemented in C code for maximum performance. This function calls
+    the C-based Alignment.visualize() method for each read.
+    
+    Args:
+        paired_aln: PairedAlignment object
+        query_seq1: Original query sequence for read1
+        query_seq2: Original query sequence for read2
+        aligner: BwaAligner instance to get reference sequences
+        line_width: Maximum characters per line (default: 80)
+        
+    Returns:
+        Multi-line string showing both alignments
+    """
+    lines = []
+    
+    # Helper function to get reference sequence
+    def ref_seq_fn(ctg, start, end):
+        return aligner.seq(ctg, start, end)
+    
+    lines.append("=" * 80)
+    lines.append("PAIRED-END ALIGNMENT VISUALIZATION")
+    lines.append("=" * 80)
+    
+    if paired_aln.is_proper_pair:
+        lines.append(f"Proper pair: YES | Insert size: {paired_aln.insert_size}")
+    else:
+        lines.append("Proper pair: NO")
+    lines.append("")
+    
+    # Visualize Read 1
+    if paired_aln.read1:
+        lines.append("--- READ 1 ---")
+        lines.append(paired_aln.read1.visualize(query_seq1, ref_seq_fn, line_width))
+        lines.append("")
+    
+    # Visualize Read 2
+    if paired_aln.read2:
+        lines.append("--- READ 2 ---")
+        lines.append(paired_aln.read2.visualize(query_seq2, ref_seq_fn, line_width))
+        lines.append("")
+    
+    # Show pairing info if both reads are on same contig
+    if paired_aln.read1 and paired_aln.read2:
+        if paired_aln.read1.ctg == paired_aln.read2.ctg:
+            lines.append("--- PAIRING INFO ---")
+            r1_start = min(paired_aln.read1.r_st, paired_aln.read1.r_en)
+            r1_end = max(paired_aln.read1.r_st, paired_aln.read1.r_en)
+            r2_start = min(paired_aln.read2.r_st, paired_aln.read2.r_en)
+            r2_end = max(paired_aln.read2.r_st, paired_aln.read2.r_en)
+            
+            if r1_start < r2_start:
+                lines.append(f"Read1: {paired_aln.read1.ctg}:{r1_start}-{r1_end} ({paired_aln.read1.strand:+d})")
+                lines.append(f"Read2: {paired_aln.read2.ctg}:{r2_start}-{r2_end} ({paired_aln.read2.strand:+d})")
+                gap = r2_start - r1_end
+            else:
+                lines.append(f"Read2: {paired_aln.read2.ctg}:{r2_start}-{r2_end} ({paired_aln.read2.strand:+d})")
+                lines.append(f"Read1: {paired_aln.read1.ctg}:{r1_start}-{r1_end} ({paired_aln.read1.strand:+d})")
+                gap = r1_start - r2_end
+            
+            lines.append(f"Gap between reads: {gap} bp")
+            if paired_aln.insert_size is not None:
+                lines.append(f"Insert size: {paired_aln.insert_size} bp")
+            else:
+                lines.append("Insert size: N/A (not a proper pair)")
+    
+    lines.append("=" * 80)
+    return "\n".join(lines)
 
 
 class BwaAligner(object):

@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
-"""Direct test of mem_matesw in bwamem without coralsnake"""
+"""
+Direct test of mem_matesw in bwamem without coralsnake.
 
-from bwamem import BwaAligner
+NOTE: This is a standalone script for manual testing/debugging.
+For automated testing, see test_matesw.py and test_visualization.py
+"""
+
+from pathlib import Path
+from bwamem import BwaAligner, visualize_paired_alignment
 
 # Converted sequences (already MK converted + RC for read2)
 seq1_conv = "TTTTGGTTTTGGGTGGGGGTTGTTGGGGGGGGTGTTGTGGGGGTGGTT"
 seq2_conv = "GGTTTGTGGTGGTTGGGTGTTTGTGGTGGTGTTGTTTTTTGGTTTTTTG"
 
-mk_prefix = "/home/yec/Desktop/genes_all_index/ref.mk"
+# Use subset reference in tests folder
+test_dir = Path(__file__).parent
+mk_prefix = str(test_dir / "test_data" / "reference" / "ref.mk.subset")
 
 print("="*80)
 print("DIRECT BWAMEM TEST - NO CORALSNAKE")
@@ -50,6 +58,34 @@ if read1_rRNA == 0:
                     break
 else:
     print("\n✓ SUCCESS: Read1 has rRNA hits!")
+
+# Visualize a few top alignments
+print("\n" + "="*80)
+print("VISUALIZING TOP ALIGNMENTS")
+print("="*80)
+
+# Find rRNA hits for visualization
+rRNA_pairs = [pa for pa in pe_alignments if pa.read1 and "rRNA" in pa.read1.ctg]
+
+if rRNA_pairs:
+    print(f"\nFound {len(rRNA_pairs)} pairs with rRNA hits. Visualizing top 3:\n")
+    for i, pa in enumerate(rRNA_pairs[:3], 1):
+        print(f"\n{'='*80}")
+        print(f"ALIGNMENT #{i} (Score: Read1={pa.read1.score if pa.read1 else 'N/A'}, "
+              f"Read2={pa.read2.score if pa.read2 else 'N/A'})")
+        print(f"{'='*80}")
+        print(visualize_paired_alignment(pa, seq1_conv, seq2_conv, aligner, line_width=80))
+        print()
+else:
+    # Visualize top 3 alignments if no rRNA hits
+    print(f"\nVisualizing top 3 alignments:\n")
+    for i, pa in enumerate(pe_alignments[:3], 1):
+        print(f"\n{'='*80}")
+        print(f"ALIGNMENT #{i} (Score: Read1={pa.read1.score if pa.read1 else 'N/A'}, "
+              f"Read2={pa.read2.score if pa.read2 else 'N/A'})")
+        print(f"{'='*80}")
+        print(visualize_paired_alignment(pa, seq1_conv, seq2_conv, aligner, line_width=80))
+        print()
 
 print("\n" + "="*80)
 print("Check /tmp/mem_matesw_debug.txt for C debug output")
