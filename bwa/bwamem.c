@@ -1171,12 +1171,12 @@ mem_aln_t mem_reg2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *
 		a.cigar = realloc(a.cigar, 4 * (a.n_cigar + 2) + l_MD);
 		if (clip5) {
 			memmove(a.cigar+1, a.cigar, a.n_cigar * 4 + l_MD); // make room for 5'-end clipping
-			a.cigar[0] = clip5<<4 | 4;
+			a.cigar[0] = clip5<<4 | 3;
 			++a.n_cigar;
 		}
 		if (clip3) {
 			memmove(a.cigar + a.n_cigar + 1, a.cigar + a.n_cigar, l_MD); // make room for 3'-end clipping
-			a.cigar[a.n_cigar++] = clip3<<4 | 4;
+			a.cigar[a.n_cigar++] = clip3<<4 | 3;
 		}
 	}
 	a.rid = bns_pos2rid(bns, pos);
