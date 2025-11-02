@@ -45,7 +45,6 @@ bwa/libbwa.a: patches/bwa-makefile-cflags.patch  ## Compile BWA C library with c
 	else \
 		patch -R -f -p0 -d bwa < patches/bwa-makefile-cflags.patch >/dev/null 2>&1 || true; \
 	fi
-	fi
 
 test:  ## Run tests
 	uv run pytest tests/ -v
