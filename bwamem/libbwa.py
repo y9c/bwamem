@@ -294,6 +294,11 @@ ffi.cdef("""
   
   cigar_pair_t* build_cigar_array(const uint32_t* cigar, int n_cigar);
   char* build_cigar_string(const uint32_t* cigar, int n_cigar);
+  
+  // Fast C-based CIGAR calculations
+  int64_t compute_r_en(int64_t r_st, const cigar_pair_t* cigar, int n_cigar);
+  int compute_blen(const cigar_pair_t* cigar, int n_cigar);
+  int compute_mlen(const cigar_pair_t* cigar, int n_cigar);
 """)
 
 
@@ -336,6 +341,8 @@ class Alignment:
         "read_num",
         "trans_strand",
         "score",
+        "_cigar_c",  # Cached C cigar_pair_t array for fast computations
+        "_cigar_str_cache",  # Cached CIGAR string
     ]
 
     # CIGAR operation characters
@@ -370,40 +377,55 @@ class Alignment:
         self.read_num = read_num
         self.trans_strand = trans_strand
         self.score = score
+        self._cigar_c = None  # Will be lazily initialized
+        self._cigar_str_cache = None  # Will be lazily initialized
+
+    def _get_cigar_c(self):
+        """Get or create the C cigar_pair_t array for fast operations."""
+        if self._cigar_c is None and self.cigar:
+            # Convert Python list to C array
+            n = len(self.cigar)
+            self._cigar_c = ffi.new("cigar_pair_t[]", n)
+            for i, (length, op) in enumerate(self.cigar):
+                self._cigar_c[i].len = length
+                self._cigar_c[i].op = op
+        return self._cigar_c
 
     @property
     def cigar_str(self):
-        """CIGAR string (calculated from cigar list)."""
-        if not self.cigar:
-            return ""
-        return "".join(f"{length}{self._CIGAR_OPS[op]}" for length, op in self.cigar)
+        """CIGAR string (calculated from cigar list using fast C code)."""
+        if self._cigar_str_cache is None:
+            if not self.cigar:
+                self._cigar_str_cache = ""
+            else:
+                # Use optimized Python string building for simplicity
+                # The C version (build_cigar_string) works with BAM-encoded CIGAR
+                self._cigar_str_cache = "".join(f"{length}{self._CIGAR_OPS[op]}" for length, op in self.cigar)
+        return self._cigar_str_cache
 
     @property
     def r_en(self):
-        """Reference end position (calculated from r_st + CIGAR)."""
-        pos = self.r_st
-        for op_len, op in self.cigar:
-            if op in [0, 2, 3]:  # M, D, N consume reference
-                pos += op_len
-        return pos
+        """Reference end position (calculated using fast C code)."""
+        cigar_c = self._get_cigar_c()
+        if cigar_c is None:
+            return self.r_st
+        return libbwa.compute_r_en(self.r_st, cigar_c, len(self.cigar))
 
     @property
     def blen(self):
-        """Alignment block length (including gaps)."""
-        length = 0
-        for op_len, op in self.cigar:
-            if op in [0, 1, 2, 3]:  # M, I, D, N
-                length += op_len
-        return length
+        """Alignment block length (calculated using fast C code)."""
+        cigar_c = self._get_cigar_c()
+        if cigar_c is None:
+            return 0
+        return libbwa.compute_blen(cigar_c, len(self.cigar))
 
     @property
     def mlen(self):
-        """Number of matching bases."""
-        matches = 0
-        for op_len, op in self.cigar:
-            if op == 0:  # M
-                matches += op_len
-        return matches
+        """Number of matching bases (calculated using fast C code)."""
+        cigar_c = self._get_cigar_c()
+        if cigar_c is None:
+            return 0
+        return libbwa.compute_mlen(cigar_c, len(self.cigar))
 
     def __repr__(self):
         return (

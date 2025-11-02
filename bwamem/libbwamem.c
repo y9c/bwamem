@@ -282,3 +282,53 @@ MODULE_API char* build_cigar_string(const uint32_t* cigar, int n_cigar) {
   *ptr = '\0';
   return result;
 }
+
+// Fast C-based calculation of reference end position from CIGAR
+// r_en = r_st + sum of lengths of operations that consume reference (M, D, N)
+MODULE_API int64_t compute_r_en(int64_t r_st, const cigar_pair_t* cigar, int n_cigar) {
+  if (cigar == NULL || n_cigar == 0) return r_st;
+  
+  int64_t pos = r_st;
+  int i;
+  for (i = 0; i < n_cigar; ++i) {
+    uint32_t op = cigar[i].op;
+    // M=0, D=2, N=3 consume reference
+    if (op == 0 || op == 2 || op == 3) {
+      pos += cigar[i].len;
+    }
+  }
+  return pos;
+}
+
+// Fast C-based calculation of alignment block length (including gaps)
+// blen = sum of lengths of M, I, D, N operations
+MODULE_API int compute_blen(const cigar_pair_t* cigar, int n_cigar) {
+  if (cigar == NULL || n_cigar == 0) return 0;
+  
+  int length = 0;
+  int i;
+  for (i = 0; i < n_cigar; ++i) {
+    uint32_t op = cigar[i].op;
+    // M=0, I=1, D=2, N=3
+    if (op <= 3) {
+      length += cigar[i].len;
+    }
+  }
+  return length;
+}
+
+// Fast C-based calculation of number of matching bases
+// mlen = sum of lengths of M operations
+MODULE_API int compute_mlen(const cigar_pair_t* cigar, int n_cigar) {
+  if (cigar == NULL || n_cigar == 0) return 0;
+  
+  int matches = 0;
+  int i;
+  for (i = 0; i < n_cigar; ++i) {
+    // M=0 (match/mismatch)
+    if (cigar[i].op == 0) {
+      matches += cigar[i].len;
+    }
+  }
+  return matches;
+}
