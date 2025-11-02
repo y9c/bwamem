@@ -7,7 +7,7 @@ name = "bwamem"
 version = "0.0.41"
 description = "Bindings to bwa aligner"
 readme = "README.md"
-license = "MPL-2.0"
+license = { text = "MPL-2.0" }
 authors = [
     {name = "Chang Ye", email = "yech1990@gmail.com"}
 ]
