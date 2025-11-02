@@ -49,8 +49,10 @@ def main():
 
     # Step 1: Build BWA index
     print("🔨 Building BWA index...")
+    from pathlib import Path
+    test_dir = Path(__file__).parent.parent
     indexer = BwaIndexer()
-    index_path = "./tests/rRNA_index"
+    index_path = str(test_dir / "test_data" / "rRNA" / "rRNA_index")
 
     try:
         indexer.build_index(reference_file, index_path)

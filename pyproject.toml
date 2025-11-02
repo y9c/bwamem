@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bwamem"
-version = "0.0.40"
+version = "0.0.41"
 description = "Bindings to bwa aligner"
 readme = "README.md"
-license = {text = "MPL-2.0"}
+license = { text = "MPL-2.0" }
 authors = [
     {name = "Chang Ye", email = "yech1990@gmail.com"}
 ]
@@ -73,7 +73,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+addopts = "-v -s --tb=short"
 
 [dependency-groups]
 dev = [
