@@ -19,6 +19,7 @@ According to the BAM specification:
 import pytest
 import tempfile
 import os
+import re
 from bwamem import BwaIndexer, BwaAligner
 
 
@@ -55,9 +56,9 @@ def test_cigar_softclip_no_skip_5prime():
         assert 'N' not in aln.cigar_str, f"CIGAR should not contain N (skip) operation: {aln.cigar_str}"
         
         # If there's soft-clipping at the start, verify the format
-        if aln.cigar_str.startswith(('1S', '2S', '3S', '4S', '5S', '6S', '7S', '8S', '9S')) or 'S' in aln.cigar_str[:3]:
+        if re.match(r'^\d+S', aln.cigar_str):
             # The CIGAR should be like "XS...M" without any N between S and M
-            parts = aln.cigar_str.split('S')
+            parts = aln.cigar_str.split('S', 1)
             if len(parts) > 1:
                 # After the S, there should be no N before the next operation
                 remaining = parts[1]
@@ -98,7 +99,7 @@ def test_cigar_softclip_no_skip_3prime():
         assert 'N' not in aln.cigar_str, f"CIGAR should not contain N (skip) operation: {aln.cigar_str}"
         
         # If there's soft-clipping at the end, verify the format
-        if 'S' in aln.cigar_str and aln.cigar_str.endswith('S'):
+        if aln.cigar_str.endswith('S'):
             # The CIGAR should be like "...MXS" without any N between M and S
             # Find the position before the last S
             parts = aln.cigar_str.rsplit('S', 1)
@@ -169,7 +170,7 @@ def test_cigar_operations_direct():
         aln = alignments[0]
         
         # Check the cigar list directly
-        # CIGAR operations: 0=M, 1=I, 2=D, 3=N, 4=S, 5=H
+        # CIGAR operations: 0=M(match), 1=I(insertion), 2=D(deletion), 3=N(skip/intron), 4=S(soft-clip), 5=H(hard-clip)
         for i, (length, op) in enumerate(aln.cigar):
             if op == 4:  # Soft-clip operation
                 # Check that adjacent operations are not N (op=3)
