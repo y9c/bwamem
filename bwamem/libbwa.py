@@ -357,7 +357,7 @@ class Alignment:
         "strand",
         "q_st",
         "q_en",
-        "mapq",
+        "_mapq",  # Use private attribute with property setter
         "cigar",
         "NM",
         "is_primary",
@@ -370,6 +370,26 @@ class Alignment:
 
     # CIGAR operation characters
     _CIGAR_OPS = "MIDNSHP=XB"
+    
+    def _clamp_mapq(self, value):
+        """Clamp MAPQ value to valid uint8_t range (0-255)."""
+        mapq_int = int(value)
+        if mapq_int < 0:
+            return 0
+        elif mapq_int > 255:
+            return 255
+        else:
+            return mapq_int
+    
+    @property
+    def mapq(self):
+        """Mapping quality score (0-255)."""
+        return self._mapq
+    
+    @mapq.setter
+    def mapq(self, value):
+        """Set mapping quality with automatic clamping to uint8_t range."""
+        self._mapq = self._clamp_mapq(value)
 
     def __init__(
         self,
@@ -393,6 +413,8 @@ class Alignment:
         self.strand = strand
         self.q_st = q_st
         self.q_en = q_en
+        # Clamp mapq to valid uint8_t range (0-255) to prevent OverflowError
+        # Use setter which will automatically clamp the value
         self.mapq = mapq
         self.cigar = cigar
         self.NM = NM
@@ -695,6 +717,13 @@ class BwaAligner(object):
                     )
                 )
 
+        # Set verbosity to 0 before loading index to suppress index load messages
+        # This must be done before bwa_idx_load_all() which can print messages if bwa_verbose >= 1
+        try:
+            libbwa.bwa_verbose = 0
+        except Exception:
+            pass
+        
         # we need to pass the index to the option parsing
         # TODO: clean up this requirement
         self.index = libbwa.bwa_idx_load_all(self.index_base)
