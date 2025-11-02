@@ -23,7 +23,6 @@ tests/
 │       ├── rRNA.fa
 │       ├── rRNA.*         # BWA index files
 │       └── rRNA_index.*   # Additional index files
-└── README_TEST_ORGANIZATION.md  # Detailed test documentation
 ```
 
 ## Test Files
@@ -38,9 +37,9 @@ tests/
 - **`test_paired_mapping.py`** - Paired-end mapping workflow tests
 - **`test_visualization.py`** - Alignment visualization tests
 
-### Manual/Debug Scripts
+### Detailed Test Scripts
 
-- **`test_matesw_direct.py`** - Standalone script for manual testing/debugging
+- **`test_matesw_direct.py`** - Detailed pytest tests with verbose output for mem_matesw debugging
 
 ## Running Tests
 

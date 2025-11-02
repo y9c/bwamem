@@ -392,8 +392,16 @@ MODULE_API aligned_seq_pair_t* apply_cigar_to_sequences(
     return NULL;
   }
   
+  if (q_st < 0 || q_en < 0 || q_st >= query_len || q_en > query_len || q_st > q_en) {
+    return NULL;
+  }
+  
   aligned_seq_pair_t* result = (aligned_seq_pair_t*)calloc(1, sizeof(aligned_seq_pair_t));
   if (result == NULL) return NULL;
+  
+  // Initialize kstring_t structures
+  result->ref_aligned = (kstring_t){0, 0, NULL};
+  result->query_aligned = (kstring_t){0, 0, NULL};
   
   int ref_pos = 0;
   int query_pos = q_st;
@@ -405,33 +413,48 @@ MODULE_API aligned_seq_pair_t* apply_cigar_to_sequences(
     
     switch (op) {
       case 0:  // M (match/mismatch)
-        if (ref_pos + length <= ref_len && query_pos + length <= query_len) {
-          kputsn(ref_seq + ref_pos, length, &result->ref_aligned);
-          kputsn(query_seq + query_pos, length, &result->query_aligned);
-          ref_pos += length;
-          query_pos += length;
+        // Check bounds - use q_en as the limit for query sequence
+        if (ref_pos < ref_len && query_pos < q_en) {
+          int match_len = length;
+          if (ref_pos + match_len > ref_len) match_len = ref_len - ref_pos;
+          if (query_pos + match_len > q_en) match_len = q_en - query_pos;
+          if (match_len > 0) {
+            kputsn(ref_seq + ref_pos, match_len, &result->ref_aligned);
+            kputsn(query_seq + query_pos, match_len, &result->query_aligned);
+            ref_pos += length;  // Use original length for ref_pos tracking
+            query_pos += length;  // Use original length for query_pos tracking
+          }
         }
         break;
         
       case 1:  // I (insertion in query)
-        if (query_pos + length <= query_len) {
-          int gap_len = length;
-          while (gap_len-- > 0) kputc('-', &result->ref_aligned);
-          kputsn(query_seq + query_pos, length, &result->query_aligned);
-          query_pos += length;
+        if (query_pos < q_en) {
+          int ins_len = length;
+          if (query_pos + ins_len > q_en) ins_len = q_en - query_pos;
+          if (ins_len > 0) {
+            int gap_len = length;  // Always use full length for gaps
+            while (gap_len-- > 0) kputc('-', &result->ref_aligned);
+            kputsn(query_seq + query_pos, ins_len, &result->query_aligned);
+            query_pos += length;  // Use original length
+          }
         }
         break;
         
       case 2:  // D (deletion in query)
-        if (ref_pos + length <= ref_len) {
-          kputsn(ref_seq + ref_pos, length, &result->ref_aligned);
-          int gap_len = length;
-          while (gap_len-- > 0) kputc('-', &result->query_aligned);
-          ref_pos += length;
+        if (ref_pos < ref_len) {
+          int del_len = length;
+          if (ref_pos + del_len > ref_len) del_len = ref_len - ref_pos;
+          if (del_len > 0) {
+            kputsn(ref_seq + ref_pos, del_len, &result->ref_aligned);
+            int gap_len = length;  // Always use full length for gaps
+            while (gap_len-- > 0) kputc('-', &result->query_aligned);
+            ref_pos += length;  // Use original length
+          }
         }
         break;
         
-      case 4:  // S (soft clip) - skip in query
+      case 4:  // S (soft clip) - skip in query (don't add to alignment)
+        // Soft clip doesn't consume reference, just advances query position
         query_pos += length;
         break;
         
@@ -441,6 +464,12 @@ MODULE_API aligned_seq_pair_t* apply_cigar_to_sequences(
       default:
         break;
     }
+  }
+  
+  // Validate that we actually produced some aligned sequences
+  if (result->ref_aligned.l == 0 || result->query_aligned.l == 0) {
+    free_aligned_seq_pair(result);
+    return NULL;
   }
   
   return result;
@@ -496,7 +525,16 @@ MODULE_API char* visualize_alignment_c(
     return NULL;
   }
   
-  // Step 3: Build match indicators
+  // Step 3: Validate aligned sequences
+  if (aligned_pair->ref_aligned.s == NULL || aligned_pair->query_aligned.s == NULL ||
+      aligned_pair->ref_aligned.l == 0 || aligned_pair->query_aligned.l == 0 ||
+      aligned_pair->ref_aligned.l != aligned_pair->query_aligned.l) {
+    free_aligned_seq_pair(aligned_pair);
+    if (query_seq_work) free(query_seq_work);
+    return NULL;
+  }
+  
+  // Step 4: Build match indicators
   char* match_line = build_match_indicators(
       aligned_pair->ref_aligned.s,
       aligned_pair->query_aligned.s,
@@ -508,7 +546,7 @@ MODULE_API char* visualize_alignment_c(
     return NULL;
   }
   
-  // Step 4: Build output using kstring_t
+  // Step 5: Build output using kstring_t
   kstring_t output = {0, 0, NULL};
   int aln_len = aligned_pair->ref_aligned.l;
   int num_chunks = (aln_len + line_width - 1) / line_width;

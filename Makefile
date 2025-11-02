@@ -22,7 +22,7 @@ install:  ## Install the package and dependencies
 install-dev:  ## Install with development dependencies
 	$(MAKE) bwa-lib
 	uv sync --extra dev
-	uv pip install -e . --no-deps
+	uv pip install -e . --no-deps --force-reinstall
 
 bwa-lib: bwa/libbwa.a  ## Build BWA static library
 

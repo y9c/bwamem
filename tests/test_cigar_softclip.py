@@ -43,9 +43,10 @@ def test_cigar_softclip_no_skip_5prime():
         indexer = BwaIndexer(verbose=0)
         index_prefix = indexer.build_index(ref_file)
         
-        # Align query
-        aligner = BwaAligner(index_prefix)
-        alignments = aligner.align(query)
+        # Align query with lenient parameters to allow soft-clipped alignments
+        # Use lower min_score and min_seed_len to handle mismatched ends
+        aligner = BwaAligner(index_prefix, min_score=5, min_seed_len=5)
+        alignments = list(aligner.align(query))
         
         # Should find at least one alignment
         assert len(alignments) > 0, f"Expected at least 1 alignment, got {len(alignments)}"
@@ -86,9 +87,9 @@ def test_cigar_softclip_no_skip_3prime():
         indexer = BwaIndexer(verbose=0)
         index_prefix = indexer.build_index(ref_file)
         
-        # Align query
-        aligner = BwaAligner(index_prefix)
-        alignments = aligner.align(query)
+        # Align query with lenient parameters to allow soft-clipped alignments
+        aligner = BwaAligner(index_prefix, min_score=10, min_seed_len=10)
+        alignments = list(aligner.align(query))
         
         # Should find at least one alignment
         assert len(alignments) > 0, f"Expected at least 1 alignment, got {len(alignments)}"
@@ -130,9 +131,9 @@ def test_cigar_softclip_both_ends():
         indexer = BwaIndexer(verbose=0)
         index_prefix = indexer.build_index(ref_file)
         
-        # Align query
-        aligner = BwaAligner(index_prefix)
-        alignments = aligner.align(query)
+        # Align query with lenient parameters to allow soft-clipped alignments
+        aligner = BwaAligner(index_prefix, min_score=5, min_seed_len=5)
+        alignments = list(aligner.align(query))
         
         # Should find at least one alignment
         assert len(alignments) > 0, f"Expected at least 1 alignment, got {len(alignments)}"
@@ -160,9 +161,9 @@ def test_cigar_operations_direct():
         indexer = BwaIndexer(verbose=0)
         index_prefix = indexer.build_index(ref_file)
         
-        # Align query
-        aligner = BwaAligner(index_prefix)
-        alignments = aligner.align(query)
+        # Align query with lenient parameters to allow soft-clipped alignments
+        aligner = BwaAligner(index_prefix, min_score=10, min_seed_len=10)
+        alignments = list(aligner.align(query))
         
         # Should find at least one alignment
         assert len(alignments) > 0, f"Expected at least 1 alignment, got {len(alignments)}"
@@ -170,10 +171,12 @@ def test_cigar_operations_direct():
         aln = alignments[0]
         
         # Check the cigar list directly
-        # CIGAR operations: 0=M(match), 1=I(insertion), 2=D(deletion), 3=N(skip/intron), 4=S(soft-clip), 5=H(hard-clip)
+        # NOTE: The wrapper converts BWA's internal CIGAR codes (0=M, 1=I, 2=D, 3=S, 4=H)
+        # to BAM/SAM format codes (0=M, 1=I, 2=D, 3=N, 4=S, 5=H).
+        # So in aln.cigar, we use BAM format: 4=S (soft-clip), 5=H (hard-clip)
         for i, (length, op) in enumerate(aln.cigar):
-            if op == 4:  # Soft-clip operation
-                # Check that adjacent operations are not N (op=3)
+            if op == 4:  # Soft-clip operation (BAM format: 4=S)
+                # Check that adjacent operations are not N (skip/intron, op=3)
                 if i > 0:
                     prev_op = aln.cigar[i-1][1]
                     assert prev_op != 3, \
@@ -184,7 +187,7 @@ def test_cigar_operations_direct():
                         f"N operation (3) should not be adjacent to S operation (4): {aln.cigar}"
             
             # Also verify that N operations don't appear incorrectly
-            if op == 3:  # N (skip) operation
+            if op == 3:  # N (skip) operation (BAM format: 3=N)
                 # N operations should not be at the edges next to S
                 if i > 0:
                     prev_op = aln.cigar[i-1][1]
