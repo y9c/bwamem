@@ -26,9 +26,13 @@ install-dev:  ## Install with development dependencies
 
 bwa-lib: bwa/libbwa.a  ## Build BWA static library
 
-bwa/libbwa.a:  ## Compile BWA C library with compilation flags
-	${SEDI} 's/CFLAGS=.*/CFLAGS=-g\ -Wall\ -Wno-unused-function\ -O2\ -fPIC\ -fno-finite-math-only/' bwa/Makefile
+bwa/libbwa.a: patches/bwa-makefile-cflags.patch patches/bwa-cigar-softclip-fix.patch  ## Compile BWA C library with compilation flags and CIGAR fix
+	@cd bwa && (git diff --quiet Makefile || git checkout Makefile) && \
+		git apply ../patches/bwa-makefile-cflags.patch
+	@cd bwa && (git diff --quiet bwamem.c || git checkout bwamem.c) && \
+		git apply ../patches/bwa-cigar-softclip-fix.patch
 	cd bwa && make libbwa.a
+	@cd bwa && git checkout Makefile bwamem.c >/dev/null 2>&1 || true
 
 test:  ## Run tests
 	uv run pytest tests/ -v
