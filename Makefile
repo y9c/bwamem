@@ -27,12 +27,28 @@ install-dev:  ## Install with development dependencies
 bwa-lib: bwa/libbwa.a  ## Build BWA static library
 
 bwa/libbwa.a: patches/bwa-makefile-cflags.patch patches/bwa-cigar-softclip-fix.patch  ## Compile BWA C library with compilation flags and CIGAR fix
-	@cd bwa && (git diff --quiet Makefile || git checkout Makefile) && \
-		git apply ../patches/bwa-makefile-cflags.patch
-	@cd bwa && (git diff --quiet bwamem.c || git checkout bwamem.c) && \
-		git apply ../patches/bwa-cigar-softclip-fix.patch
-	cd bwa && make libbwa.a
-	@cd bwa && git checkout Makefile bwamem.c >/dev/null 2>&1 || true
+	@echo "Applying patches to BWA source files..."
+	@# Check if bwa is a git repo (submodule)
+	@if [ -d bwa/.git ] || [ -f bwa/.git ]; then \
+		echo "BWA is a git submodule, using git to apply patches..."; \
+		cd bwa && (git diff --quiet Makefile || git checkout Makefile) && \
+			git apply ../patches/bwa-makefile-cflags.patch && \
+		(git diff --quiet bwamem.c || git checkout bwamem.c) && \
+			git apply ../patches/bwa-cigar-softclip-fix.patch; \
+	else \
+		echo "BWA is not a git repo, using patch command..."; \
+		patch -f -p0 -d bwa < patches/bwa-makefile-cflags.patch || true; \
+		patch -f -p0 -d bwa < patches/bwa-cigar-softclip-fix.patch || true; \
+	fi
+	cd bwa && $(MAKE) libbwa.a
+	@echo "Reverting patches from BWA source files..."
+	@# Revert patches to keep bwa directory clean
+	@if [ -d bwa/.git ] || [ -f bwa/.git ]; then \
+		cd bwa && git checkout Makefile bwamem.c >/dev/null 2>&1 || true; \
+	else \
+		patch -R -f -p0 -d bwa < patches/bwa-makefile-cflags.patch >/dev/null 2>&1 || true; \
+		patch -R -f -p0 -d bwa < patches/bwa-cigar-softclip-fix.patch >/dev/null 2>&1 || true; \
+	fi
 
 test:  ## Run tests
 	uv run pytest tests/ -v
