@@ -100,7 +100,7 @@ ffi.cdef("""
     int flag;        // extra flag
     uint32_t is_rev:1, is_alt:1, mapq:8, NM:22; // is_rev: whether on the reverse strand; mapq: mapping quality; NM: edit distance
     int n_cigar;     // number of CIGAR operations
-    uint32_t *cigar; // CIGAR in the BAM encoding: opLen<<4|op; op to integer mapping: MIDSH=>01234
+    uint32_t *cigar; // CIGAR in BWA's internal encoding: opLen<<4|op; op to integer mapping: MIDSH=>01234 (different from BAM!)
     char *XA;        // alternative mappings
 
     int score, sub, alt_sc;
@@ -1188,9 +1188,13 @@ class BwaAligner(object):
 
     def _build_cigar(self, cigar_array, n_cigar):
         """Build CIGAR list from CIGAR array using fast C implementation.
-
+        
+        Converts BWA's internal CIGAR encoding to BAM specification encoding:
+        - BWA uses: MIDSH (0=M, 1=I, 2=D, 3=S, 4=H)
+        - BAM uses: MIDNSHP=XB (0=M, 1=I, 2=D, 3=N, 4=S, 5=H, ...)
+        
         Returns:
-            list: list of [length, op] pairs
+            list: list of [length, op] pairs using BAM encoding
         """
         if n_cigar == 0:
             return []
@@ -1200,10 +1204,16 @@ class BwaAligner(object):
         if cigar_pairs == ffi.NULL:
             return []
         
-        # Convert C array to Python list
+        # Convert C array to Python list and remap BWA codes to BAM codes
+        # BWA internal: 0=M, 1=I, 2=D, 3=S, 4=H
+        # BAM spec:     0=M, 1=I, 2=D, 3=N, 4=S, 5=H
+        bwa_to_bam = {0: 0, 1: 1, 2: 2, 3: 4, 4: 5}  # Map BWA op codes to BAM op codes
+        
         cigar_list = []
         for i in range(n_cigar):
-            cigar_list.append([cigar_pairs[i].len, cigar_pairs[i].op])
+            bwa_op = cigar_pairs[i].op
+            bam_op = bwa_to_bam.get(bwa_op, bwa_op)  # Default to bwa_op if not in map
+            cigar_list.append([cigar_pairs[i].len, bam_op])
         
         # Free C-allocated memory
         libbwa.free(cigar_pairs)
