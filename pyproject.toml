@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bwamem"
-version = "0.0.46"
+version = "0.0.47"
 description = "Bindings to bwa aligner"
 readme = "README.md"
 license = { text = "MPL-2.0" }
