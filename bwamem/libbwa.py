@@ -269,7 +269,7 @@ class BwaAligner:
 
     def align(self, seq1, seq2=None, min_mapq=0, min_blen=0, min_mlen=0):
         if seq2 is None: return self.align_raw(seq1, min_mapq, min_blen, min_mlen)
-        return self._align_paired_end_raw(seq1, seq2, min_mapq, min_blen, min_mlen)
+        return self.align_raw_pe(seq1, seq2, min_mapq, min_blen, min_mlen)
 
     def align_raw(self, seq, min_mapq=0, min_blen=0, min_mlen=0):
         regs = libbwa.mem_align1(self.opt, self.index.bwt, self.index.bns, self.index.pac, len(seq), seq.encode())
@@ -280,14 +280,13 @@ class BwaAligner:
         if regs.a != ffi.NULL: libbwa.free(regs.a)
         return hits
 
-    def _align_paired_end_raw(self, seq1, seq2, min_mapq=0, min_blen=0, min_mlen=0):
+    def align_raw_pe(self, seq1, seq2, min_mapq=0, min_blen=0, min_mlen=0):
         model = self._insert_model
         avg = model[0] if model else 0.0
         std = model[1] if model and len(model) > 1 else (avg * 0.1 if avg else 0.0)
         imax = model[2] if model and len(model) > 2 else 0
         imin = model[3] if model and len(model) > 3 else 0
         
-        # All BWA PE logic happens in one fast C call
         with suppress_stderr():
             pe = libbwa.bwa_align_pe(self.opt, self.index, seq1.encode(), len(seq1), seq2.encode(), len(seq2), avg, std, imin, imax)
             
@@ -300,19 +299,23 @@ class BwaAligner:
             
             results = []
             if r1hits and r2hits:
-                pes1 = pe.pes[1]
-                for h1 in r1hits[:5]:
-                    for h2 in r2hits[:5]:
-                        if h1[0] == h2[0] and h1[3] > 0 and h2[3] < 0 and h1[1] <= h2[2]:
-                            isize = h2[2] - h1[1]
-                            low = imin if imin else (avg-4*std if avg else pes1.low)
-                            high = imax if imax else (avg+4*std if avg else pes1.high)
-                            if low <= isize <= high:
-                                results.append((h1, h2, True, isize))
+                # Group R1 hits by contig
+                c1 = {}
+                for h1 in r1hits:
+                    if h1[0] not in c1: c1[h1[0]] = []
+                    c1[h1[0]].append(h1)
+                
+                for h2 in r2hits:
+                    if h2[0] in c1:
+                        for h1 in c1[h2[0]]:
+                            # Check distance (within 1kb as per original coralsnake logic)
+                            dist = max(h1[2], h2[2]) - min(h1[1], h2[1])
+                            if dist < 1000:
+                                results.append((h1, h2, True, dist))
             
             if not results:
-                for h1 in r1hits: results.append((h1, None, False, None))
-                for h2 in r2hits: results.append((None, h2, False, None))
+                for h1 in r1hits: results.append((h1, None, False, 0))
+                for h2 in r2hits: results.append((None, h2, False, 0))
                 
             return results
         finally:
@@ -320,19 +323,17 @@ class BwaAligner:
 
     def _conv_hits_raw(self, regs, seq, min_q, min_blen, min_mlen):
         if regs.n == 0: return []
-        
         res_v = libbwa.bwa_mem_reg2aln_all(self.opt, self.index.bns, self.index.pac, len(seq), seq.encode(), ffi.addressof(regs), min_q, min_blen, min_mlen)
         if res_v == ffi.NULL: return []
-        
         hits = []
         try:
             for i in range(res_v.n):
                 h = res_v.hits[i]
                 c_str = ffi.string(h.cigar).decode()
+                # (ctg, r_st, r_en, strand, q_st, q_en, mapq, cigar, NM, score)
                 hits.append((self._rid_to_name[h.rid], h.pos, h.r_en, h.strand, h.q_st, h.q_en, h.mapq, c_str, h.NM, h.score))
         finally:
             libbwa.free_raw_hit_v(res_v)
-            
         return hits
 
 
