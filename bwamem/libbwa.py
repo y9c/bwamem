@@ -347,7 +347,7 @@ class BwaIndexer:
             # Wait for reader to finish and close rf
             t.join(timeout=5)
         else:
- res = libbwa.bwa_idx_build(fasta_file.encode(), prefix.encode(), self.algo_type, self.block_size)
+            res = libbwa.bwa_idx_build(fasta_file.encode(), prefix.encode(), self.algo_type, self.block_size)
         if res != 0: self.progress["status"] = "failed"; raise RuntimeError(f"BWA index build failed for {fasta_file}")
         self.progress["status"] = "completed"; return prefix
 
