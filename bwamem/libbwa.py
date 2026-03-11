@@ -199,7 +199,6 @@ ffi.cdef("""
 
   int bwa_idx_build(const char *fa, const char *prefix, int algo_type, int block_size);
   extern int bwa_verbose;
-  extern int optind;
 """)
 
 
@@ -226,10 +225,13 @@ class BwaAligner:
         if softclip_supplementary: argv.append("-Y")
         if mark_secondary: argv.append("-M")
         argv.append(index_prefix)
-        try: libbwa.optind = 1
-        except: pass
+        # Keep string references to prevent GC during the call
         c_strs = [ffi.new("char[]", x.encode()) for x in argv]
-        c_argv = ffi.new("char*[]", c_strs)
+        # Create a NULL-terminated array of pointers
+        c_argv = ffi.new("char*[]", len(argv) + 1)
+        for i, s in enumerate(c_strs):
+            c_argv[i] = s
+        c_argv[len(argv)] = ffi.NULL
         self.opt = libbwa.get_opts(len(argv), c_argv, self.index)
         self._insert_model = insert_model
         self._rid_to_name = [ffi.string(self.index.bns.anns[i].name).decode() for i in range(self.index.bns.n_seqs)]
