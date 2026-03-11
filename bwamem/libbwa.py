@@ -340,8 +340,14 @@ class BwaIndexer:
                 except OSError: pass
             t = threading.Thread(target=reader, daemon=True); t.start()
             res = libbwa.bwa_idx_build(fasta_file.encode(), prefix.encode(), self.algo_type, self.block_size)
-            os.dup2(old_err, 2); os.close(wf); os.close(rf); t.join(1)
-        else: res = libbwa.bwa_idx_build(fasta_file.encode(), prefix.encode(), self.algo_type, self.block_size)
+            # Restore stderr immediately
+            os.dup2(old_err, 2); os.close(old_err)
+            # Close only the write-end to signal EOF to the reader thread
+            os.close(wf)
+            # Wait for reader to finish and close rf
+            t.join(timeout=5)
+        else:
+ res = libbwa.bwa_idx_build(fasta_file.encode(), prefix.encode(), self.algo_type, self.block_size)
         if res != 0: self.progress["status"] = "failed"; raise RuntimeError(f"BWA index build failed for {fasta_file}")
         self.progress["status"] = "completed"; return prefix
 
