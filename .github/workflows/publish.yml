@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -33,11 +33,8 @@ jobs:
           CIBW_BUILD: 'cp312-* cp313-* cp314-*'
           CIBW_SKIP: '*-musllinux_* *-manylinux_i686'
           CIBW_ARCHS_LINUX: 'x86_64'
-          CIBW_ARCHS_MACOS: 'x86_64 arm64'
           CIBW_BEFORE_BUILD_LINUX: 'yum install -y zlib-devel gcc-c++ git && make bwa/libbwa.a'
-          CIBW_BEFORE_BUILD_MACOS: 'make bwa/libbwa.a'
           CIBW_ENVIRONMENT_LINUX: "CFLAGS='-O3 -march=native -mtune=native -ffast-math -funroll-loops'"
-          CIBW_ENVIRONMENT_MACOS: "MACOSX_DEPLOYMENT_TARGET=11.0 CFLAGS='-O3 -ffast-math -funroll-loops'"
 
       - uses: actions/upload-artifact@v4
         with:
