@@ -8,6 +8,10 @@
 #include "bwamem.h"
 #include "../bwa/kstring.h"
 
+// External BWA functions not in bwamem.h
+void mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], const mem_alnreg_t *a, int l_ms, const uint8_t *ms, mem_alnreg_v *regs);
+int mem_mark_primary_se(const mem_opt_t *opt, int n, mem_alnreg_t *a, int64_t id);
+
 // External BWA global variable for verbosity control
 extern int bwa_verbose;
 
@@ -335,6 +339,35 @@ MODULE_API int compute_mlen(const cigar_pair_t* cigar, int n_cigar) {
   return matches;
 }
 
+// Fast C-based sequence extraction from BWA index
+// Returns allocated string that caller must free()
+MODULE_API char* bwa_fetch_seq(const bwaidx_t* idx, int rid, int64_t start, int64_t end) {
+  if (idx == NULL || rid < 0 || rid >= idx->bns->n_seqs) return NULL;
+
+  int64_t seq_len = idx->bns->anns[rid].len;
+  int64_t seq_offset = idx->bns->anns[rid].offset;
+
+  if (start < 0) start = 0;
+  if (end > seq_len) end = seq_len;
+  if (start >= end) return NULL;
+
+  
+  int64_t len = end - start;
+  char* result = (char*)malloc(len + 1);
+  if (result == NULL) return NULL;
+  
+  static const char base_chars[] = "ACGT";
+  int64_t i;
+  for (i = 0; i < len; ++i) {
+    int64_t global_pos = seq_offset + start + i;
+    int64_t byte_pos = global_pos >> 2;
+    int bit_offset = (3 - (global_pos & 3)) << 1;
+    result[i] = base_chars[(idx->pac[byte_pos] >> bit_offset) & 3];
+  }
+  result[len] = '\0';
+  return result;
+}
+
 // Structure to hold aligned sequences for visualization
 // Using kstring_t for automatic memory management
 typedef struct {
@@ -490,6 +523,283 @@ MODULE_API char* build_match_indicators(const char* ref_aligned, const char* que
   return str.s;  // Caller must free
 }
 
+
+// Structure for directional mapping results
+typedef struct {
+  char* cigar;
+  char* md;
+  long long pos;
+  int rid;
+  int strand;
+  int score;
+  int bad_mm;
+  int yf, zf, yc, zc, ns, nc;
+} dir_hit_t;
+
+typedef struct {
+  size_t n;
+  dir_hit_t* hits;
+} dir_hit_v;
+
+MODULE_API void free_dir_hit_v(dir_hit_v* v) {
+  if (v) {
+    for (size_t i = 0; i < v->n; i++) {
+      free(v->hits[i].cigar);
+      free(v->hits[i].md);
+    }
+    free(v->hits);
+    free(v);
+  }
+}
+
+// Internal helper for directional scoring inside the mapping loop
+static void score_hit_directional(const bwaidx_t* idx, const char* q_seq, int l_seq, 
+                                 const uint32_t* cigar, int n_cigar, int rid, int64_t pos, int is_rev,
+                                 int is_orientation1, dir_hit_t* out) {
+  // Build CIGAR string
+  out->cigar = build_cigar_string(cigar, n_cigar);
+  
+  // Get reference end pos to know fetch length
+  int64_t r_en = pos;
+  for (int i = 0; i < n_cigar; i++) {
+    uint32_t op = cigar[i] & 0xF;
+    if (op == 0 || op == 2 || op == 3) r_en += (cigar[i] >> 4);
+  }
+  
+  // Fetch reference
+  char* ref = bwa_fetch_seq(idx, rid, pos, r_en);
+  if (!ref) {
+    out->score = -1000;
+    out->md = strdup("0");
+    return;
+  }
+  
+  // Directional scoring logic
+  size_t buffer_size = l_seq * 16 + 128;
+  char* md_buf = malloc(buffer_size);
+  
+  int yf = 0, zf = 0, yc = 0, zc = 0, ns = 0, nc = 0;
+  int matches = 0, expected_conversions = 0, wrong_conversions = 0, other_mismatches = 0, indels = 0;
+  int r_idx = 0, q_idx = 0, match_count = 0;
+  size_t md_pos = 0;
+  
+  char b1, b3;
+  if (is_orientation1) { b1 = 'A'; b3 = 'C'; } 
+  else { b1 = 'T'; b3 = 'G'; }
+  
+  for (int i = 0; i < n_cigar; i++) {
+    uint32_t len = cigar[i] >> 4;
+    uint32_t op = cigar[i] & 0xF;
+    
+    if (op == 0) { // M
+      for (uint32_t j = 0; j < len; j++) {
+        char rb = ref[r_idx], qb = q_seq[q_idx];
+        if (rb == qb) {
+          matches++; match_count++;
+          if (qb == b1) zf++; else if (qb == b3) zc++;
+        } else {
+          int n = snprintf(md_buf + md_pos, buffer_size - md_pos, "%d%c", match_count, rb);
+          if (n > 0) md_pos += n;
+          match_count = 0;
+          if (is_orientation1) {
+            if ((rb == 'C' && qb == 'T') || (rb == 'A' && qb == 'G')) {
+              expected_conversions++; if (qb == 'G') yf++; else yc++;
+            } else { wrong_conversions++; ns++; }
+          } else {
+            if ((rb == 'G' && qb == 'A') || (rb == 'T' && qb == 'C')) {
+              expected_conversions++; if (qb == 'A') yf++; else yc++;
+            } else { wrong_conversions++; ns++; }
+          }
+        }
+        r_idx++; q_idx++;
+      }
+    } else if (op == 1 || op == 4) { q_idx += len; nc += len; if (op == 1) indels += len; }
+    else if (op == 2) {
+      int n = snprintf(md_buf + md_pos, buffer_size - md_pos, "%d^", match_count);
+      if (n > 0) md_pos += n;
+      for (uint32_t j = 0; j < len; j++) {
+        if (md_pos < buffer_size - 1) md_buf[md_pos++] = ref[r_idx++];
+        else r_idx++;
+      }
+      match_count = 0; nc += len; indels += len;
+    } else if (op == 3) { r_idx += len; }
+  }
+  int final_n = snprintf(md_buf + md_pos, buffer_size - md_pos, "%d", match_count);
+  if (final_n > 0) md_pos += final_n;
+  md_buf[md_pos] = '\0';
+  
+  out->md = strdup(md_buf);
+  free(md_buf);
+  
+  out->score = matches + expected_conversions - wrong_conversions - other_mismatches - indels;
+  out->bad_mm = wrong_conversions + other_mismatches;
+  out->yf = yf; out->zf = zf; out->yc = yc; out->zc = zc; out->ns = ns; out->nc = nc;
+  out->rid = rid; out->pos = pos; out->strand = is_rev ? -1 : 1;
+  
+  free(ref);
+}
+
+MODULE_API dir_hit_v* bwa_map_directional(const mem_opt_t* opt, const bwaidx_t* idx, 
+                                         const char* q_conv, const char* q_orig, 
+                                         int is_orientation1) {
+  int l_seq = strlen(q_conv);
+  mem_alnreg_v ar = mem_align1(opt, idx->bwt, idx->bns, idx->pac, l_seq, q_conv);
+  
+  if (ar.n == 0) { free(ar.a); return NULL; }
+  
+  dir_hit_v* result = malloc(sizeof(dir_hit_v));
+  result->hits = malloc(ar.n * sizeof(dir_hit_t));
+  result->n = 0;
+  
+  for (size_t i = 0; i < ar.n; i++) {
+    mem_aln_t aln = mem_reg2aln(opt, idx->bns, idx->pac, l_seq, q_conv, &ar.a[i]);
+    if (aln.rid >= 0) {
+      score_hit_directional(idx, q_orig, l_seq, aln.cigar, aln.n_cigar, aln.rid, aln.pos, aln.is_rev, 
+                            is_orientation1, &result->hits[result->n]);
+      result->n++;
+    }
+    free(aln.cigar);
+  }
+  
+  free(ar.a);
+  return result;
+}
+
+// Structure for raw alignment hits
+typedef struct {
+  char* cigar;
+  long long pos;
+  long long r_en;
+  int rid;
+  int strand;
+  int q_st;
+  int q_en;
+  int mapq;
+  int NM;
+  int score;
+} raw_hit_t;
+
+typedef struct {
+  size_t n;
+  raw_hit_t* hits;
+} raw_hit_v;
+
+MODULE_API void free_raw_hit_v(raw_hit_v* v) {
+  if (v) {
+    for (size_t i = 0; i < v->n; i++) {
+      free(v->hits[i].cigar);
+    }
+    free(v->hits);
+    free(v);
+  }
+}
+
+typedef struct {
+  mem_alnreg_v regs[2];
+  mem_pestat_t pes[4];
+} pe_regs_t;
+
+MODULE_API pe_regs_t* bwa_align_pe(const mem_opt_t* opt, const bwaidx_t* idx, const char* seq1, int l1, const char* seq2, int l2, double avg, double std, int imin, int imax) {
+    pe_regs_t* result = calloc(1, sizeof(pe_regs_t));
+    result->regs[0] = mem_align1(opt, idx->bwt, idx->bns, idx->pac, l1, seq1);
+    result->regs[1] = mem_align1(opt, idx->bwt, idx->bns, idx->pac, l2, seq2);
+    
+    mem_pestat_t* pes = result->pes;
+    if (avg > 0) {
+        pes[1].failed = 0; pes[1].avg = avg; pes[1].std = std;
+        pes[1].low = imin > 0 ? imin : (int)(avg - 4*std);
+        pes[1].high = imax > 0 ? imax : (int)(avg + 4*std);
+    } else if (result->regs[0].n > 0 && result->regs[1].n > 0) {
+        // We assume stderr is suppressed externally if needed
+        mem_pestat(opt, idx->bns->l_pac, 2, result->regs, pes);
+    }
+    
+    for (int r = 0; r < 4; r++) {
+        if (pes[r].low == 0 && pes[r].high <= 1) {
+            pes[r].low = 20; pes[r].high = 600; pes[r].failed = 0; pes[r].avg = 200; pes[r].std = 100;
+        }
+    }
+    
+    if (!(opt->flag & 0x20)) {
+        uint8_t* s1e = encode_seq(seq1, l1);
+        uint8_t* s2e = encode_seq(seq2, l2);
+        
+        int n1 = opt->max_matesw < result->regs[0].n ? opt->max_matesw : result->regs[0].n;
+        for (int j = 0; j < n1; j++) {
+            if (result->regs[0].a[j].score >= result->regs[0].a[0].score - opt->pen_unpaired) {
+                mem_matesw(opt, idx->bns, idx->pac, pes, &result->regs[0].a[j], l2, s2e, &result->regs[1]);
+            }
+        }
+        
+        int n2 = opt->max_matesw < result->regs[1].n ? opt->max_matesw : result->regs[1].n;
+        for (int j = 0; j < n2; j++) {
+            if (result->regs[1].a[j].score >= result->regs[1].a[0].score - opt->pen_unpaired) {
+                mem_matesw(opt, idx->bns, idx->pac, pes, &result->regs[1].a[j], l1, s1e, &result->regs[0]);
+            }
+        }
+        free(s1e); free(s2e);
+    }
+    
+    mem_mark_primary_se(opt, result->regs[0].n, result->regs[0].a, 0);
+    mem_mark_primary_se(opt, result->regs[1].n, result->regs[1].a, 1);
+    
+    return result;
+}
+
+MODULE_API void free_pe_regs(pe_regs_t* p) {
+    if (p) {
+        if (p->regs[0].a) free(p->regs[0].a);
+        if (p->regs[1].a) free(p->regs[1].a);
+        free(p);
+    }
+}
+
+MODULE_API raw_hit_v* bwa_mem_reg2aln_all(const mem_opt_t* opt, const bntseq_t* bns, const uint8_t* pac, int l_seq, const char* seq, const mem_alnreg_v* regs, int min_mapq, int min_blen, int min_mlen) {
+  if (!regs || regs->n == 0) return NULL;
+  
+  raw_hit_v* result = malloc(sizeof(raw_hit_v));
+  if (!result) return NULL;
+  result->hits = malloc(regs->n * sizeof(raw_hit_t));
+  if (!result->hits) { free(result); return NULL; }
+  result->n = 0;
+  
+  for (size_t i = 0; i < regs->n; i++) {
+    if (regs->a[i].score < opt->T) continue;
+    
+    mem_aln_t aln = mem_reg2aln(opt, bns, pac, l_seq, seq, &regs->a[i]);
+    if (aln.rid >= 0 && aln.mapq >= min_mapq) {
+      cigar_pair_t* cp = (cigar_pair_t*)aln.cigar;
+      
+      int skip = 0;
+      if (min_blen > 0 && compute_blen(cp, aln.n_cigar) < min_blen) skip = 1;
+      if (!skip && min_mlen > 0 && compute_mlen(cp, aln.n_cigar) < min_mlen) skip = 1;
+      
+      if (!skip) {
+        raw_hit_t* h = &result->hits[result->n];
+        h->cigar = build_cigar_string(aln.cigar, aln.n_cigar);
+        h->pos = aln.pos;
+        h->rid = aln.rid;
+        h->strand = aln.is_rev ? -1 : 1;
+        h->q_st = regs->a[i].qb;
+        h->q_en = regs->a[i].qe;
+        h->mapq = aln.mapq;
+        h->NM = aln.NM;
+        h->score = aln.score;
+        
+        h->r_en = aln.pos;
+        for (int j = 0; j < aln.n_cigar; j++) {
+          uint32_t op = aln.cigar[j] & 0xF;
+          if (op == 0 || op == 2 || op == 3 || op == 7 || op == 8) {
+            h->r_en += (aln.cigar[j] >> 4);
+          }
+        }
+        result->n++;
+      }
+    }
+    free(aln.cigar);
+  }
+  return result;
+}
 
 // Complete visualization in C - returns formatted string
 MODULE_API char* visualize_alignment_c(
