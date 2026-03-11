@@ -38,7 +38,7 @@ static PyMethodDef module_functions[] = {{NULL, NULL, 0, NULL}};
 #define MOD_DEF(ob, name, doc, methods) ob = Py_InitModule3(name, methods, doc);
 #endif
 
-MOD_INIT(bwamemy) {
+MOD_INIT(bwalib) {
   PyObject* m;
   bwa_verbose = 0; // Silence BWA by default
   MOD_DEF(m, "bwalib", "High-level binding to bwa mem", module_functions)
