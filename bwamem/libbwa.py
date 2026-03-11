@@ -143,9 +143,9 @@ ffi.cdef("""
   bwaidx_t *bwa_idx_load(const char *hint, int which);
   void bwa_idx_destroy(bwaidx_t *idx);
   mem_alnreg_v mem_align1(const mem_opt_t *opt, const void *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, const char *seq);
-  mem_aln_t mem_reg2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_seq, const char *seq, const mem_alnreg_t *ar);
+  mem_aln_t mem_reg2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const char *query_, const mem_alnreg_t *ar);
   mem_opt_t *get_opts(int argc, char *argv[], const bwaidx_t *idx);
-  mem_aln_t *mem_reg2aln_ptr(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_seq, const char *seq, const mem_alnreg_t *ar);
+  mem_aln_t *mem_reg2aln_ptr(const mem_opt_t* opt, const bntseq_t* bns, const uint8_t* pac, int l_seq, const char* seq, const mem_alnreg_t* ar);
   void mem_pestat(const mem_opt_t *opt, int64_t l_pac, int n, const mem_alnreg_v *regs, mem_pestat_t pes[4]);
   void mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], const mem_alnreg_t *a, int l_ms, const uint8_t *ms, mem_alnreg_v *regs);
   int mem_mark_primary_se(const mem_opt_t *opt, int n, mem_alnreg_t *a, int64_t id);
@@ -160,7 +160,7 @@ ffi.cdef("""
   int kseq_read(kseq_t *seq);
   bseq1_t *bseq_read(int chunk_size, int *n_, void *ks1, void *ks2);
 
-  typedef struct { uint32_t len:28, op:4; } cigar_pair_t;
+  typedef struct { uint32_t len; uint32_t op; } cigar_pair_t;
   int64_t compute_r_en(int64_t r_st, const cigar_pair_t* cigar, int n_cigar);
   int compute_blen(const cigar_pair_t* cigar, int n_cigar);
   int compute_mlen(const cigar_pair_t* cigar, int n_cigar);
@@ -195,6 +195,8 @@ ffi.cdef("""
   pe_regs_t* bwa_align_pe(const mem_opt_t* opt, const bwaidx_t* idx, const char* seq1, int l1, const char* seq2, int l2, double avg, double std, int imin, int imax);
   void free_pe_regs(pe_regs_t* p);
 
+  char* visualize_alignment_c(const char* ctg, int64_t r_st, int64_t r_en, int strand, int score, int mapq, const char* ref_seq, int ref_len, const char* query_seq, int query_len, const cigar_pair_t* cigar, int n_cigar, int q_st, int q_en, int lw);
+
   int bwa_idx_build(const char *fa, const char *prefix, int algo_type, int block_size);
   extern int bwa_verbose;
   extern int optind;
@@ -213,32 +215,6 @@ def suppress_stderr():
         os.close(old_stderr_fd)
 
 
-class Alignment:
-    def __init__(self, ctg, ctg_len, r_st, strand, q_st, q_en, mapq, cigar, NM, is_primary, read_num=0, trans_strand=0, score=0):
-        self.ctg, self.ctg_len, self.r_st, self.strand = ctg, ctg_len, r_st, strand
-        self.q_st, self.q_en, self.mapq, self.cigar, self.NM = q_st, q_en, mapq, cigar, NM
-        self.is_primary, self.read_num, self.trans_strand, self.score = is_primary, read_num, trans_strand, score
-
-    @property
-    def cigar_str(self):
-        return "".join("{}{}".format(l, "MIDNSHPN=X"[o]) for l, o in self.cigar)
-
-    @property
-    def r_en(self):
-        return self.r_st + sum(l for l, o in self.cigar if o in (0, 2, 3, 7, 8))
-
-    def __repr__(self):
-        return f"Alignment(ctg={self.ctg}, r_st={self.r_st}, strand={self.strand}, mapq={self.mapq}, cigar={self.cigar_str}, score={self.score})"
-
-
-class PairedAlignment:
-    def __init__(self, read1, read2, is_proper_pair, insert_size):
-        self.read1, self.read2, self.is_proper_pair, self.insert_size = read1, read2, is_proper_pair, insert_size
-
-    def __repr__(self):
-        return f"PairedAlignment(read1={'Mapped' if self.read1 else 'Unmapped'}, read2={'Mapped' if self.read2 else 'Unmapped'}, proper={self.is_proper_pair}, isize={self.insert_size})"
-
-
 class BwaAligner:
     def __init__(self, index_prefix, min_seed_len=19, max_occ=500, softclip_supplementary=True, mark_secondary=True, clip_penalties=(6, 6), unpaired_penalty=24, min_score=30, insert_model=None):
         try: libbwa.bwa_verbose = 0
@@ -250,10 +226,8 @@ class BwaAligner:
         if softclip_supplementary: argv.append("-Y")
         if mark_secondary: argv.append("-M")
         argv.append(index_prefix)
-        # Reset getopt internal state
         try: libbwa.optind = 1
         except: pass
-        # Keep references to prevent GC during the call
         c_strs = [ffi.new("char[]", x.encode()) for x in argv]
         c_argv = ffi.new("char*[]", c_strs)
         self.opt = libbwa.get_opts(len(argv), c_argv, self.index)
@@ -293,40 +267,28 @@ class BwaAligner:
         std = model[1] if model and len(model) > 1 else (avg * 0.1 if avg else 0.0)
         imax = model[2] if model and len(model) > 2 else 0
         imin = model[3] if model and len(model) > 3 else 0
-        
         with suppress_stderr():
             pe = libbwa.bwa_align_pe(self.opt, self.index, seq1.encode(), len(seq1), seq2.encode(), len(seq2), avg, std, imin, imax)
-            
-        if pe == ffi.NULL:
-            return []
-            
+        if pe == ffi.NULL: return []
         try:
             r1hits = self._conv_hits_raw(pe.regs[0], seq1, min_mapq, min_blen, min_mlen)
             r2hits = self._conv_hits_raw(pe.regs[1], seq2, min_mapq, min_blen, min_mlen)
-            
             results = []
             if r1hits and r2hits:
-                # Group R1 hits by contig
                 c1 = {}
                 for h1 in r1hits:
                     if h1[0] not in c1: c1[h1[0]] = []
                     c1[h1[0]].append(h1)
-                
                 for h2 in r2hits:
                     if h2[0] in c1:
                         for h1 in c1[h2[0]]:
-                            # Check distance (within 1kb as per original coralsnake logic)
                             dist = max(h1[2], h2[2]) - min(h1[1], h2[1])
-                            if dist < 1000:
-                                results.append((h1, h2, True, dist))
-            
+                            if dist < 1000: results.append((h1, h2, True, dist))
             if not results:
                 for h1 in r1hits: results.append((h1, None, False, 0))
                 for h2 in r2hits: results.append((None, h2, False, 0))
-                
             return results
-        finally:
-            libbwa.free_pe_regs(pe)
+        finally: libbwa.free_pe_regs(pe)
 
     def _conv_hits_raw(self, regs, seq, min_q, min_blen, min_mlen):
         if regs.n == 0: return []
@@ -347,11 +309,12 @@ class BwaAligner:
 class BwaIndexer:
     def __init__(self, algorithm="auto", block_size=10000000, capture_progress=True, verbose=1):
         self.algorithm, self.block_size, self.capture_progress, self.verbose = algorithm, block_size, capture_progress, verbose
-        self.algo_type = {"auto": 0, "rb2": 1, "bwtsw": 2, "is": 3}[algorithm]
+        try: self.algo_type = {"auto": 0, "rb2": 1, "bwtsw": 2, "is": 3}[algorithm]
+        except KeyError: raise KeyError(f"Unknown algorithm: {algorithm}")
         self.progress = {"status": "idle", "text_length": 0, "iterations": 0, "characters_processed": 0, "messages": []}
 
     def build_index(self, fasta_file, prefix=None):
-        if not os.path.exists(fasta_file): raise FileNotFoundError(fasta_file)
+        if not os.path.exists(fasta_file): raise FileNotFoundError(f"FASTA file not found: {fasta_file}")
         prefix = prefix or os.path.splitext(fasta_file)[0]
         self.progress.update({"status": "building", "text_length": 0, "iterations": 0, "characters_processed": 0, "messages": []})
         try: libbwa.bwa_verbose = int(self.verbose)
@@ -359,13 +322,15 @@ class BwaIndexer:
         if self.capture_progress:
             rf, wf = os.pipe(); old_err = os.dup(2); os.dup2(wf, 2)
             def reader():
-                with os.fdopen(rf, "r", errors="replace") as f:
-                    for line in f:
-                        l = line.rstrip(); self.progress["messages"].append(l)
-                        m = re.search(r"textLength=(\d+)", l)
-                        if m: self.progress["text_length"] = int(m.group(1))
-                        m = re.search(r"(\d+) iterations done\. (\d+) characters processed", l)
-                        if m: self.progress["iterations"], self.progress["characters_processed"] = int(m.group(1)), int(m.group(2))
+                try:
+                    with os.fdopen(rf, "r", errors="replace") as f:
+                        for line in f:
+                            l = line.rstrip(); self.progress["messages"].append(l)
+                            m = re.search(r"textLength=(\d+)", l)
+                            if m: self.progress["text_length"] = int(m.group(1))
+                            m = re.search(r"(\d+) iterations done\. (\d+) characters processed", l)
+                            if m: self.progress["iterations"], self.progress["characters_processed"] = int(m.group(1)), int(m.group(2))
+                except OSError: pass
             t = threading.Thread(target=reader, daemon=True); t.start()
             res = libbwa.bwa_idx_build(fasta_file.encode(), prefix.encode(), self.algo_type, self.block_size)
             os.dup2(old_err, 2); os.close(wf); os.close(rf); t.join(1)
@@ -376,6 +341,3 @@ class BwaIndexer:
     @property
     def progress_percent(self):
         return (self.progress["characters_processed"] / self.progress["text_length"] * 100) if self.progress["text_length"] > 0 else None
-
-
-def visualize_paired_alignment(paired_aln): return str(paired_aln)

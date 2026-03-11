@@ -1,19 +1,7 @@
-"""Test for correct CIGAR soft-clip operation (S instead of N).
+"""Test for correct CIGAR generation with soft-clipping.
 
-This test validates that BWA correctly generates CIGAR strings with soft-clip
-operations (S) instead of skip operations (N) when dealing with clipped reads.
-
-Bug: Previously, the code in bwa/bwamem.c used operation code 3 (N - skip/intron)
-instead of operation code 4 (S - soft-clip) when adding clipping to CIGAR strings.
-This resulted in incorrect CIGARs like "16S16N27M" instead of "16S27M".
-
-According to the BAM specification:
-- M = 0 (match)
-- I = 1 (insertion)
-- D = 2 (deletion)
-- N = 3 (skip/intron)
-- S = 4 (soft-clip)
-- H = 5 (hard-clip)
+This test validates that BWA correctly generates CIGAR strings with soft-clipping
+when the alignment doesn't start or end at the query boundaries.
 """
 
 import pytest
@@ -22,178 +10,116 @@ import os
 import re
 from bwamem import BwaIndexer, BwaAligner
 
+def parse_cigar(cigar_str):
+    return re.findall(r'(\d+)([MIDNSHP=X])', cigar_str)
 
 def test_cigar_softclip_no_skip_5prime():
-    """Test that 5' soft-clips do not have adjacent N operations."""
-    # Create a reference sequence
-    reference = 'ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT'
-    
-    # Create a query with the last part matching but first part not matching
-    # This should result in soft-clipping at the 5' end
-    query = 'GGGGGGGGGGGGGGGGACGTACGTACGTACGTACGTACGT'
+    """Test that 5' soft-clipping is correctly represented."""
+    reference = 'GAATAGGACCGCGGTTCTATTTTGTTGGTTTTCGGAACTGAGG'
+    # Query has an extra 'CCCCC' at the beginning
+    query = 'CCCCCGGACCGCGGTTCTATTTTGTTGGTTTTCGGAACTGAGG'
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Write reference FASTA
         ref_file = os.path.join(tmpdir, 'ref.fa')
         with open(ref_file, 'w') as f:
-            f.write('>chr1\n')
-            f.write(reference + '\n')
+            f.write('>ref\n' + reference + '\n')
         
-        # Build index
         indexer = BwaIndexer(verbose=0)
         index_prefix = indexer.build_index(ref_file)
         
-        # Align query with lenient parameters to allow soft-clipped alignments
-        # Use lower min_score and min_seed_len to handle mismatched ends
-        aligner = BwaAligner(index_prefix, min_score=5, min_seed_len=5)
-        alignments = list(aligner.align(query))
+        aligner = BwaAligner(index_prefix)
+        alignments = aligner.align(query)
         
-        # Should find at least one alignment
-        assert len(alignments) > 0, f"Expected at least 1 alignment, got {len(alignments)}"
-        
+        assert len(alignments) == 1
         aln = alignments[0]
         
-        # Check CIGAR string does NOT contain 'N' operation
-        assert 'N' not in aln.cigar_str, f"CIGAR should not contain N (skip) operation: {aln.cigar_str}"
+        # (ctg, r_st, r_en, strand, q_st, q_en, mapq, cigar_str, NM, score)
+        assert 'S' in aln[7]
+        assert 'N' not in aln[7]
         
-        # If there's soft-clipping at the start, verify the format
-        if re.match(r'^\d+S', aln.cigar_str):
-            # The CIGAR should be like "XS...M" without any N between S and M
-            parts = aln.cigar_str.split('S', 1)
-            if len(parts) > 1:
-                # After the S, there should be no N before the next operation
-                remaining = parts[1]
-                assert not remaining.startswith('N'), \
-                    f"CIGAR should not have N after S: {aln.cigar_str}"
+        # Validate total query length
+        cigar_ops = parse_cigar(aln[7])
+        q_len = sum(int(l) for l, op in cigar_ops if op in 'MIS=X')
+        assert q_len == len(query)
 
 
 def test_cigar_softclip_no_skip_3prime():
-    """Test that 3' soft-clips do not have adjacent N operations."""
-    # Create a reference sequence
-    reference = 'ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT'
-    
-    # Create a query with the first part matching but last part not matching
-    # This should result in soft-clipping at the 3' end
-    query = 'ACGTACGTACGTACGTACGTACGTGGGGGGGGGGGGGGGG'
+    """Test that 3' soft-clipping is correctly represented."""
+    reference = 'GAATAGGACCGCGGTTCTATTTTGTTGGTTTTCGGAACTGAGG'
+    # Query has an extra 'GGGGG' at the end
+    query = 'GAATAGGACCGCGGTTCTATTTTGTTGGTTTTCGGAAAAAGGGGG'
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Write reference FASTA
         ref_file = os.path.join(tmpdir, 'ref.fa')
         with open(ref_file, 'w') as f:
-            f.write('>chr1\n')
-            f.write(reference + '\n')
+            f.write('>ref\n' + reference + '\n')
         
-        # Build index
         indexer = BwaIndexer(verbose=0)
         index_prefix = indexer.build_index(ref_file)
         
-        # Align query with lenient parameters to allow soft-clipped alignments
-        aligner = BwaAligner(index_prefix, min_score=10, min_seed_len=10)
-        alignments = list(aligner.align(query))
+        aligner = BwaAligner(index_prefix)
+        alignments = aligner.align(query)
         
-        # Should find at least one alignment
-        assert len(alignments) > 0, f"Expected at least 1 alignment, got {len(alignments)}"
-        
+        assert len(alignments) == 1
         aln = alignments[0]
         
-        # Check CIGAR string does NOT contain 'N' operation
-        assert 'N' not in aln.cigar_str, f"CIGAR should not contain N (skip) operation: {aln.cigar_str}"
+        assert 'S' in aln[7]
+        assert 'N' not in aln[7]
         
-        # If there's soft-clipping at the end, verify the format
-        if aln.cigar_str.endswith('S'):
-            # The CIGAR should be like "...MXS" without any N between M and S
-            # Find the position before the last S
-            parts = aln.cigar_str.rsplit('S', 1)
-            if len(parts) > 1:
-                before_s = parts[0]
-                # Should not end with N
-                assert not before_s.endswith('N'), \
-                    f"CIGAR should not have N before final S: {aln.cigar_str}"
+        cigar_ops = parse_cigar(aln[7])
+        q_len = sum(int(l) for l, op in cigar_ops if op in 'MIS=X')
+        assert q_len == len(query)
 
 
 def test_cigar_softclip_both_ends():
-    """Test that soft-clips on both ends do not have adjacent N operations."""
-    # Create a reference sequence
-    reference = 'ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT'
-    
-    # Create a query with mismatches at both ends
-    # This should result in soft-clipping at both ends
-    query = 'GGGGACGTACGTACGTACGTACGTACGTGGGG'
+    """Test that soft-clipping on both ends is correctly represented."""
+    reference = 'GAATAGGACCGCGGTTCTATTTTGTTGGTTTTCGGAACTGAGG'
+    query = 'AAAAAGAATAGGACCGCGGTTCTATTTTGTTGGTTTTCGGAACCCCCC'
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Write reference FASTA
         ref_file = os.path.join(tmpdir, 'ref.fa')
         with open(ref_file, 'w') as f:
-            f.write('>chr1\n')
-            f.write(reference + '\n')
+            f.write('>ref\n' + reference + '\n')
         
-        # Build index
         indexer = BwaIndexer(verbose=0)
         index_prefix = indexer.build_index(ref_file)
         
-        # Align query with lenient parameters to allow soft-clipped alignments
-        aligner = BwaAligner(index_prefix, min_score=5, min_seed_len=5)
-        alignments = list(aligner.align(query))
+        aligner = BwaAligner(index_prefix)
+        alignments = aligner.align(query)
         
-        # Should find at least one alignment
-        assert len(alignments) > 0, f"Expected at least 1 alignment, got {len(alignments)}"
-        
+        assert len(alignments) == 1
         aln = alignments[0]
         
-        # Check CIGAR string does NOT contain 'N' operation
-        assert 'N' not in aln.cigar_str, f"CIGAR should not contain N (skip) operation: {aln.cigar_str}"
+        assert 'S' in aln[7]
+        assert 'N' not in aln[7]
+        
+        cigar_ops = parse_cigar(aln[7])
+        q_len = sum(int(l) for l, op in cigar_ops if op in 'MIS=X')
+        assert q_len == len(query)
 
 
 def test_cigar_operations_direct():
-    """Test CIGAR operations directly by checking the cigar list structure."""
-    # Create a simple test case
-    reference = 'ACGTACGTACGTACGTACGTACGTACGTACGT'
-    query = 'GGGGACGTACGTACGTACGTACGTGGGG'
+    """Test direct access to CIGAR operations."""
+    reference = 'GAATAGGACCGCGGTTCTATTTTGTTGGTTTTCGGAACTGAGG'
+    query = 'AAAAAGAATAGGACCGCGGTTCTATTTTGTTGGTTTTCGGAACCCCCC'
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Write reference FASTA
         ref_file = os.path.join(tmpdir, 'ref.fa')
         with open(ref_file, 'w') as f:
-            f.write('>chr1\n')
-            f.write(reference + '\n')
+            f.write('>ref\n' + reference + '\n')
         
-        # Build index
         indexer = BwaIndexer(verbose=0)
         index_prefix = indexer.build_index(ref_file)
         
-        # Align query with lenient parameters to allow soft-clipped alignments
-        aligner = BwaAligner(index_prefix, min_score=10, min_seed_len=10)
-        alignments = list(aligner.align(query))
-        
-        # Should find at least one alignment
-        assert len(alignments) > 0, f"Expected at least 1 alignment, got {len(alignments)}"
+        aligner = BwaAligner(index_prefix)
+        alignments = aligner.align(query)
         
         aln = alignments[0]
+        cigar_ops = parse_cigar(aln[7])
         
-        # Check the cigar list directly
-        # NOTE: The wrapper converts BWA's internal CIGAR codes (0=M, 1=I, 2=D, 3=S, 4=H)
-        # to BAM/SAM format codes (0=M, 1=I, 2=D, 3=N, 4=S, 5=H).
-        # So in aln.cigar, we use BAM format: 4=S (soft-clip), 5=H (hard-clip)
-        for i, (length, op) in enumerate(aln.cigar):
-            if op == 4:  # Soft-clip operation (BAM format: 4=S)
-                # Check that adjacent operations are not N (skip/intron, op=3)
-                if i > 0:
-                    prev_op = aln.cigar[i-1][1]
-                    assert prev_op != 3, \
-                        f"N operation (3) should not be adjacent to S operation (4): {aln.cigar}"
-                if i < len(aln.cigar) - 1:
-                    next_op = aln.cigar[i+1][1]
-                    assert next_op != 3, \
-                        f"N operation (3) should not be adjacent to S operation (4): {aln.cigar}"
-            
-            # Also verify that N operations don't appear incorrectly
-            if op == 3:  # N (skip) operation (BAM format: 3=N)
-                # N operations should not be at the edges next to S
-                if i > 0:
-                    prev_op = aln.cigar[i-1][1]
-                    assert prev_op != 4, \
-                        f"N operation should not follow S operation: {aln.cigar}"
-                if i < len(aln.cigar) - 1:
-                    next_op = aln.cigar[i+1][1]
-                    assert next_op != 4, \
-                        f"N operation should not precede S operation: {aln.cigar}"
+        # Verify it starts/ends with S
+        assert cigar_ops[0][1] == 'S'
+        assert cigar_ops[-1][1] == 'S'
+        
+        q_len = sum(int(l) for l, op in cigar_ops if op in 'MIS=X')
+        assert q_len == len(query)
