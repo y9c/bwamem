@@ -225,14 +225,19 @@ class BwaAligner:
         if softclip_supplementary: argv.append("-Y")
         if mark_secondary: argv.append("-M")
         argv.append(index_prefix)
-        # Keep string references to prevent GC during the call
         c_strs = [ffi.new("char[]", x.encode()) for x in argv]
-        # Create a NULL-terminated array of pointers
-        c_argv = ffi.new("char*[]", len(argv) + 1)
+        # Create a NULL-terminated array of pointers and keep it alive as an attribute
+        self._c_argv = ffi.new("char*[]", len(argv) + 1)
         for i, s in enumerate(c_strs):
-            c_argv[i] = s
-        c_argv[len(argv)] = ffi.NULL
-        self.opt = libbwa.get_opts(len(argv), c_argv, self.index)
+            self._c_argv[i] = s
+        self._c_argv[len(argv)] = ffi.NULL
+        # Store strings too to prevent GC
+        self._c_strs = c_strs
+        
+        self.opt = libbwa.get_opts(len(argv), self._c_argv, self.index)
+        if self.opt == ffi.NULL:
+            raise RuntimeError("Failed to initialize BWA options")
+            
         self._insert_model = insert_model
         self._rid_to_name = [ffi.string(self.index.bns.anns[i].name).decode() for i in range(self.index.bns.n_seqs)]
 
