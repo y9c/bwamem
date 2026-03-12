@@ -34,7 +34,7 @@ jobs:
           CIBW_SKIP: '*-musllinux_* *-manylinux_i686'
           CIBW_ARCHS_LINUX: 'x86_64'
           CIBW_BEFORE_BUILD_LINUX: 'yum install -y zlib-devel gcc-c++ git && make bwa/libbwa.a'
-          CIBW_ENVIRONMENT_LINUX: "CFLAGS='-O3 -march=native -mtune=native -ffast-math -funroll-loops'"
+          CIBW_ENVIRONMENT_LINUX: "CFLAGS='-O3 -ffast-math -funroll-loops'"
 
       - uses: actions/upload-artifact@v4
         with:
