@@ -20,7 +20,9 @@ def get_shared_lib(name):
     lib_file = None
     current_dir = os.path.dirname(os.path.abspath(__file__))
     for f in os.listdir(current_dir):
-        if f.startswith(name) and (f.endswith(".so") or f.endswith(".dll") or f.endswith(".dylib")):
+        if f.startswith(name) and (
+            f.endswith(".so") or f.endswith(".dll") or f.endswith(".dylib")
+        ):
             lib_file = os.path.join(current_dir, f)
             break
     if lib_file is None:
@@ -215,15 +217,43 @@ def suppress_stderr():
 
 
 class BwaAligner:
-    def __init__(self, index_prefix, min_seed_len=19, max_occ=500, softclip_supplementary=True, mark_secondary=True, clip_penalties=(6, 6), unpaired_penalty=24, min_score=30, insert_model=None):
-        try: libbwa.bwa_verbose = 0
-        except: pass
+    def __init__(
+        self,
+        index_prefix,
+        min_seed_len=19,
+        max_occ=500,
+        softclip_supplementary=True,
+        mark_secondary=True,
+        clip_penalties=(6, 6),
+        unpaired_penalty=24,
+        min_score=30,
+        insert_model=None,
+    ):
+        try:
+            libbwa.bwa_verbose = 0
+        except:
+            pass
         with suppress_stderr():
             self.index = libbwa.bwa_idx_load(index_prefix.encode(), 7)
-        if self.index == ffi.NULL: raise ValueError(f"Failed to load BWA index: {index_prefix}")
-        argv = ["bwamem", "-k", str(min_seed_len), "-c", str(max_occ), "-L", f"{clip_penalties[0]},{clip_penalties[1]}", "-U", str(unpaired_penalty), "-T", str(min_score)]
-        if softclip_supplementary: argv.append("-Y")
-        if mark_secondary: argv.append("-M")
+        if self.index == ffi.NULL:
+            raise ValueError(f"Failed to load BWA index: {index_prefix}")
+        argv = [
+            "bwamem",
+            "-k",
+            str(min_seed_len),
+            "-c",
+            str(max_occ),
+            "-L",
+            f"{clip_penalties[0]},{clip_penalties[1]}",
+            "-U",
+            str(unpaired_penalty),
+            "-T",
+            str(min_score),
+        ]
+        if softclip_supplementary:
+            argv.append("-Y")
+        if mark_secondary:
+            argv.append("-M")
         argv.append(index_prefix)
         c_strs = [ffi.new("char[]", x.encode()) for x in argv]
         # Create a NULL-terminated array of pointers and keep it alive as an attribute
@@ -233,42 +263,61 @@ class BwaAligner:
         self._c_argv[len(argv)] = ffi.NULL
         # Store strings too to prevent GC
         self._c_strs = c_strs
-        
+
         self.opt = libbwa.get_opts(len(argv), self._c_argv, self.index)
         if self.opt == ffi.NULL:
             raise RuntimeError("Failed to initialize BWA options")
-            
+
         self._insert_model = insert_model
-        self._rid_to_name = [ffi.string(self.index.bns.anns[i].name).decode() for i in range(self.index.bns.n_seqs)]
+        self._rid_to_name = [
+            ffi.string(self.index.bns.anns[i].name).decode()
+            for i in range(self.index.bns.n_seqs)
+        ]
         self._name_to_rid = {name: i for i, name in enumerate(self._rid_to_name)}
 
     def __del__(self):
-        if hasattr(self, "index") and self.index != ffi.NULL: libbwa.bwa_idx_destroy(self.index)
-        if hasattr(self, "opt") and self.opt != ffi.NULL: libbwa.free(self.opt)
+        if hasattr(self, "index") and self.index != ffi.NULL:
+            libbwa.bwa_idx_destroy(self.index)
+        if hasattr(self, "opt") and self.opt != ffi.NULL:
+            libbwa.free(self.opt)
 
     def seq(self, name, start=0, end=0x7FFFFFFF):
         rid = self._name_to_rid.get(name, -1)
-        if rid < 0: return None
+        if rid < 0:
+            return None
         return self.seq_by_rid(rid, start, end)
 
     def seq_by_rid(self, rid, start=0, end=0x7FFFFFFF):
-        if rid < 0 or rid >= len(self._rid_to_name): return None
+        if rid < 0 or rid >= len(self._rid_to_name):
+            return None
         res_ptr = libbwa.bwa_fetch_seq(self.index, rid, start, end)
-        if res_ptr == ffi.NULL: return None
-        res = ffi.string(res_ptr).decode(); libbwa.free(res_ptr)
+        if res_ptr == ffi.NULL:
+            return None
+        res = ffi.string(res_ptr).decode()
+        libbwa.free(res_ptr)
         return res
 
     def align(self, seq1, seq2=None, min_mapq=0, min_blen=0, min_mlen=0):
-        if seq2 is None: return self.align_raw(seq1, min_mapq, min_blen, min_mlen)
+        if seq2 is None:
+            return self.align_raw(seq1, min_mapq, min_blen, min_mlen)
         return self.align_raw_pe(seq1, seq2, min_mapq, min_blen, min_mlen)
 
     def align_raw(self, seq, min_mapq=0, min_blen=0, min_mlen=0):
-        regs = libbwa.mem_align1(self.opt, self.index.bwt, self.index.bns, self.index.pac, len(seq), seq.encode())
+        regs = libbwa.mem_align1(
+            self.opt,
+            self.index.bwt,
+            self.index.bns,
+            self.index.pac,
+            len(seq),
+            seq.encode(),
+        )
         if regs.n == 0:
-            if regs.a != ffi.NULL: libbwa.free(regs.a)
+            if regs.a != ffi.NULL:
+                libbwa.free(regs.a)
             return []
         hits = self._conv_hits_raw(regs, seq, min_mapq, min_blen, min_mlen)
-        if regs.a != ffi.NULL: libbwa.free(regs.a)
+        if regs.a != ffi.NULL:
+            libbwa.free(regs.a)
         return hits
 
     def align_raw_pe(self, seq1, seq2, min_mapq=0, min_blen=0, min_mlen=0):
@@ -278,8 +327,20 @@ class BwaAligner:
         imax = model[2] if model and len(model) > 2 else 0
         imin = model[3] if model and len(model) > 3 else 0
         with suppress_stderr():
-            pe = libbwa.bwa_align_pe(self.opt, self.index, seq1.encode(), len(seq1), seq2.encode(), len(seq2), avg, std, imin, imax)
-        if pe == ffi.NULL: return []
+            pe = libbwa.bwa_align_pe(
+                self.opt,
+                self.index,
+                seq1.encode(),
+                len(seq1),
+                seq2.encode(),
+                len(seq2),
+                avg,
+                std,
+                imin,
+                imax,
+            )
+        if pe == ffi.NULL:
+            return []
         try:
             r1hits = self._conv_hits_raw(pe.regs[0], seq1, min_mapq, min_blen, min_mlen)
             r2hits = self._conv_hits_raw(pe.regs[1], seq2, min_mapq, min_blen, min_mlen)
@@ -287,73 +348,156 @@ class BwaAligner:
             if r1hits and r2hits:
                 c1 = {}
                 for h1 in r1hits:
-                    if h1[0] not in c1: c1[h1[0]] = []
+                    if h1[0] not in c1:
+                        c1[h1[0]] = []
                     c1[h1[0]].append(h1)
                 for h2 in r2hits:
                     if h2[0] in c1:
                         for h1 in c1[h2[0]]:
                             dist = max(h1[2], h2[2]) - min(h1[1], h2[1])
-                            if dist < 1000: results.append((h1, h2, True, dist))
+                            if dist < 1000:
+                                results.append((h1, h2, True, dist))
             if not results:
-                for h1 in r1hits: results.append((h1, None, False, 0))
-                for h2 in r2hits: results.append((None, h2, False, 0))
+                for h1 in r1hits:
+                    results.append((h1, None, False, 0))
+                for h2 in r2hits:
+                    results.append((None, h2, False, 0))
             return results
-        finally: libbwa.free_pe_regs(pe)
+        finally:
+            libbwa.free_pe_regs(pe)
 
     def _conv_hits_raw(self, regs, seq, min_q, min_blen, min_mlen):
-        if regs.n == 0: return []
-        res_v = libbwa.bwa_mem_reg2aln_all(self.opt, self.index.bns, self.index.pac, len(seq), seq.encode(), ffi.addressof(regs), min_q, min_blen, min_mlen)
-        if res_v == ffi.NULL: return []
+        if regs.n == 0:
+            return []
+        res_v = libbwa.bwa_mem_reg2aln_all(
+            self.opt,
+            self.index.bns,
+            self.index.pac,
+            len(seq),
+            seq.encode(),
+            ffi.addressof(regs),
+            min_q,
+            min_blen,
+            min_mlen,
+        )
+        if res_v == ffi.NULL:
+            return []
         hits = []
         try:
             for i in range(res_v.n):
                 h = res_v.hits[i]
                 c_str = ffi.string(h.cigar).decode()
                 # (ctg, pos, r_en, strand, q_st, q_en, mapq, cigar, NM, score, rid)
-                hits.append((self._rid_to_name[h.rid], h.pos, h.r_en, h.strand, h.q_st, h.q_en, h.mapq, c_str, h.NM, h.score, h.rid))
+                hits.append(
+                    (
+                        self._rid_to_name[h.rid],
+                        h.pos,
+                        h.r_en,
+                        h.strand,
+                        h.q_st,
+                        h.q_en,
+                        h.mapq,
+                        c_str,
+                        h.NM,
+                        h.score,
+                        h.rid,
+                    )
+                )
         finally:
             libbwa.free_raw_hit_v(res_v)
         return hits
 
 
 class BwaIndexer:
-    def __init__(self, algorithm="auto", block_size=10000000, capture_progress=True, verbose=1):
-        self.algorithm, self.block_size, self.capture_progress, self.verbose = algorithm, block_size, capture_progress, verbose
-        try: self.algo_type = {"auto": 0, "rb2": 1, "bwtsw": 2, "is": 3}[algorithm]
-        except KeyError: raise KeyError(f"Unknown algorithm: {algorithm}")
-        self.progress = {"status": "idle", "text_length": 0, "iterations": 0, "characters_processed": 0, "messages": []}
+    def __init__(
+        self, algorithm="auto", block_size=10000000, capture_progress=True, verbose=1
+    ):
+        self.algorithm, self.block_size, self.capture_progress, self.verbose = (
+            algorithm,
+            block_size,
+            capture_progress,
+            verbose,
+        )
+        try:
+            self.algo_type = {"auto": 0, "rb2": 1, "bwtsw": 2, "is": 3}[algorithm]
+        except KeyError:
+            raise KeyError(f"Unknown algorithm: {algorithm}")
+        self.progress = {
+            "status": "idle",
+            "text_length": 0,
+            "iterations": 0,
+            "characters_processed": 0,
+            "messages": [],
+        }
 
     def build_index(self, fasta_file, prefix=None):
-        if not os.path.exists(fasta_file): raise FileNotFoundError(f"FASTA file not found: {fasta_file}")
+        if not os.path.exists(fasta_file):
+            raise FileNotFoundError(f"FASTA file not found: {fasta_file}")
         prefix = prefix or os.path.splitext(fasta_file)[0]
-        self.progress.update({"status": "building", "text_length": 0, "iterations": 0, "characters_processed": 0, "messages": []})
-        try: libbwa.bwa_verbose = int(self.verbose)
-        except: pass
+        self.progress.update(
+            {
+                "status": "building",
+                "text_length": 0,
+                "iterations": 0,
+                "characters_processed": 0,
+                "messages": [],
+            }
+        )
+        try:
+            libbwa.bwa_verbose = int(self.verbose)
+        except:
+            pass
         if self.capture_progress:
-            rf, wf = os.pipe(); old_err = os.dup(2); os.dup2(wf, 2)
+            rf, wf = os.pipe()
+            old_err = os.dup(2)
+            os.dup2(wf, 2)
+
             def reader():
                 try:
                     with os.fdopen(rf, "r", errors="replace") as f:
                         for line in f:
-                            l = line.rstrip(); self.progress["messages"].append(l)
+                            l = line.rstrip()
+                            self.progress["messages"].append(l)
                             m = re.search(r"textLength=(\d+)", l)
-                            if m: self.progress["text_length"] = int(m.group(1))
-                            m = re.search(r"(\d+) iterations done\. (\d+) characters processed", l)
-                            if m: self.progress["iterations"], self.progress["characters_processed"] = int(m.group(1)), int(m.group(2))
-                except OSError: pass
-            t = threading.Thread(target=reader, daemon=True); t.start()
-            res = libbwa.bwa_idx_build(fasta_file.encode(), prefix.encode(), self.algo_type, self.block_size)
+                            if m:
+                                self.progress["text_length"] = int(m.group(1))
+                            m = re.search(
+                                r"(\d+) iterations done\. (\d+) characters processed", l
+                            )
+                            if m:
+                                (
+                                    self.progress["iterations"],
+                                    self.progress["characters_processed"],
+                                ) = int(m.group(1)), int(m.group(2))
+                except OSError:
+                    pass
+
+            t = threading.Thread(target=reader, daemon=True)
+            t.start()
+            res = libbwa.bwa_idx_build(
+                fasta_file.encode(), prefix.encode(), self.algo_type, self.block_size
+            )
             # Restore stderr immediately
-            os.dup2(old_err, 2); os.close(old_err)
+            os.dup2(old_err, 2)
+            os.close(old_err)
             # Close only the write-end to signal EOF to the reader thread
             os.close(wf)
             # Wait for reader to finish and close rf
             t.join(timeout=5)
         else:
-            res = libbwa.bwa_idx_build(fasta_file.encode(), prefix.encode(), self.algo_type, self.block_size)
-        if res != 0: self.progress["status"] = "failed"; raise RuntimeError(f"BWA index build failed for {fasta_file}")
-        self.progress["status"] = "completed"; return prefix
+            res = libbwa.bwa_idx_build(
+                fasta_file.encode(), prefix.encode(), self.algo_type, self.block_size
+            )
+        if res != 0:
+            self.progress["status"] = "failed"
+            raise RuntimeError(f"BWA index build failed for {fasta_file}")
+        self.progress["status"] = "completed"
+        return prefix
 
     @property
     def progress_percent(self):
-        return (self.progress["characters_processed"] / self.progress["text_length"] * 100) if self.progress["text_length"] > 0 else None
+        return (
+            (self.progress["characters_processed"] / self.progress["text_length"] * 100)
+            if self.progress["text_length"] > 0
+            else None
+        )

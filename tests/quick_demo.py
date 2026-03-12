@@ -8,10 +8,13 @@ indexer = BwaIndexer()
 
 # Example of how to build an index (would need actual FASTA file)
 from pathlib import Path
+
 test_dir = Path(__file__).parent.parent
 rRNA_fa = test_dir / "test_data" / "rRNA" / "rRNA.fa"
 indexer = BwaIndexer(algorithm="auto")
-index_path = indexer.build_index(str(rRNA_fa), prefix=str(test_dir / "test_data" / "rRNA" / "rRNA"))
+index_path = indexer.build_index(
+    str(rRNA_fa), prefix=str(test_dir / "test_data" / "rRNA" / "rRNA")
+)
 
 aligner = BwaAligner(index_path, options="-T 0 -k 10", insert_model=(150, 15, 1000))
 

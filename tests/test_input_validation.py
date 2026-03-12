@@ -13,16 +13,17 @@ def test_align_empty_sequence():
     with tempfile.NamedTemporaryFile(suffix=".fa", mode="w", delete=False) as f:
         f.write(">ref\nACGTACGTACGTACGTACGTACGTACGTACGT\n")
         ref_path = f.name
-    
+
     try:
         indexer = BwaIndexer(verbose=0)
         idx = indexer.build_index(ref_path)
         aligner = BwaAligner(idx)
-        
+
         assert aligner.align("") == []
         assert aligner.align("", "ACGT") == []
     finally:
-        if os.path.exists(ref_path): os.remove(ref_path)
+        if os.path.exists(ref_path):
+            os.remove(ref_path)
 
 
 def test_align_whitespace_sequence():
@@ -30,15 +31,16 @@ def test_align_whitespace_sequence():
     with tempfile.NamedTemporaryFile(suffix=".fa", mode="w", delete=False) as f:
         f.write(">ref\nACGTACGTACGTACGTACGTACGTACGTACGT\n")
         ref_path = f.name
-    
+
     try:
         indexer = BwaIndexer(verbose=0)
         idx = indexer.build_index(ref_path)
         aligner = BwaAligner(idx)
-        
+
         assert aligner.align("   ") == []
     finally:
-        if os.path.exists(ref_path): os.remove(ref_path)
+        if os.path.exists(ref_path):
+            os.remove(ref_path)
 
 
 def test_align_non_string_input():
@@ -47,16 +49,17 @@ def test_align_non_string_input():
     with tempfile.NamedTemporaryFile(suffix=".fa", mode="w", delete=False) as f:
         f.write(">ref\nACGTACGTACGTACGTACGTACGTACGTACGT\n")
         ref_path = f.name
-    
+
     try:
         indexer = BwaIndexer(verbose=0)
         idx = indexer.build_index(ref_path)
         aligner = BwaAligner(idx)
-        
+
         with pytest.raises((TypeError, AttributeError)):
             aligner.align(123)
     finally:
-        if os.path.exists(ref_path): os.remove(ref_path)
+        if os.path.exists(ref_path):
+            os.remove(ref_path)
 
 
 def test_indexer_invalid_algorithm():
@@ -103,6 +106,6 @@ def test_indexer_capture_progress_flag():
     """Test capture_progress flag."""
     indexer = BwaIndexer(capture_progress=True)
     assert indexer.capture_progress is True
-    
+
     indexer = BwaIndexer(capture_progress=False)
     assert indexer.capture_progress is False

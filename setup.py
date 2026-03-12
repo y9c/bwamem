@@ -65,12 +65,12 @@ def get_compile_args():
         "-funroll-loops",
         "-DNDEBUG",
     ]
-    
+
     # Add architecture-specific flags only on x86-64
     machine = platform.machine().lower()
     if machine in ["x86_64", "amd64"]:
         args.append("-march=x86-64")  # Base x86-64 for maximum compatibility
-    
+
     return args
 
 
@@ -78,7 +78,7 @@ def get_link_args():
     """Get platform-specific linking arguments."""
     system = platform.system()
     static_lib = os.path.join("bwa", "libbwa.a")
-    
+
     if system == "Linux":
         # Use --whole-archive on Linux to ensure all symbols are included
         return [
