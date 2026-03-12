@@ -240,16 +240,19 @@ class BwaAligner:
             
         self._insert_model = insert_model
         self._rid_to_name = [ffi.string(self.index.bns.anns[i].name).decode() for i in range(self.index.bns.n_seqs)]
+        self._name_to_rid = {name: i for i, name in enumerate(self._rid_to_name)}
 
     def __del__(self):
         if hasattr(self, "index") and self.index != ffi.NULL: libbwa.bwa_idx_destroy(self.index)
         if hasattr(self, "opt") and self.opt != ffi.NULL: libbwa.free(self.opt)
 
     def seq(self, name, start=0, end=0x7FFFFFFF):
-        rid = -1
-        for i, n in enumerate(self._rid_to_name):
-            if n == name: rid = i; break
+        rid = self._name_to_rid.get(name, -1)
         if rid < 0: return None
+        return self.seq_by_rid(rid, start, end)
+
+    def seq_by_rid(self, rid, start=0, end=0x7FFFFFFF):
+        if rid < 0 or rid >= len(self._rid_to_name): return None
         res_ptr = libbwa.bwa_fetch_seq(self.index, rid, start, end)
         if res_ptr == ffi.NULL: return None
         res = ffi.string(res_ptr).decode(); libbwa.free(res_ptr)
@@ -306,8 +309,8 @@ class BwaAligner:
             for i in range(res_v.n):
                 h = res_v.hits[i]
                 c_str = ffi.string(h.cigar).decode()
-                # (ctg, r_st, r_en, strand, q_st, q_en, mapq, cigar, NM, score)
-                hits.append((self._rid_to_name[h.rid], h.pos, h.r_en, h.strand, h.q_st, h.q_en, h.mapq, c_str, h.NM, h.score))
+                # (ctg, pos, r_en, strand, q_st, q_en, mapq, cigar, NM, score, rid)
+                hits.append((self._rid_to_name[h.rid], h.pos, h.r_en, h.strand, h.q_st, h.q_en, h.mapq, c_str, h.NM, h.score, h.rid))
         finally:
             libbwa.free_raw_hit_v(res_v)
         return hits
