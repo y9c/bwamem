@@ -237,6 +237,12 @@ class BwaAligner:
             self.index = libbwa.bwa_idx_load(index_prefix.encode(), 7)
         if self.index == ffi.NULL:
             raise ValueError(f"Failed to load BWA index: {index_prefix}")
+        if (self.index.bns == ffi.NULL
+                or self.index.bns.l_pac == 0
+                or self.index.bns.n_seqs == 0):
+            raise ValueError(
+                f"BWA index has no sequences (empty FASTA?): {index_prefix}"
+            )
         argv = [
             "bwamem",
             "-k",
