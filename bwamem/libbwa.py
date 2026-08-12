@@ -481,6 +481,14 @@ class HierarchicalAligner:
     def n_layers(self):
         return len(self._layers)
 
+    def close(self):
+        for layer in self._layers:
+            a = layer["aligner"]
+            if hasattr(a, "index") and a.index != ffi.NULL:
+                libbwa.bwa_idx_destroy(a.index)
+                a.index = ffi.NULL
+        self._layers.clear()
+
 
 class BwaIndexer:
     def __init__(

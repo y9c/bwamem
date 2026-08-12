@@ -27,7 +27,7 @@ def cmd_map(args):
     if len(ss) == 1: ss = ss * len(refs)
 
     if len(ks) != len(refs) or len(ns) != len(refs) or len(ss) != len(refs):
-        print("error: --seed-len/--nm-ratio/--min-score must have 1 or N values (N=number of -i refs)", file=sys.stderr)
+        print("error: -k/-n/-T must have 1 or N values (N=number of -i refs)", file=sys.stderr)
         return 1
 
     layers = []
