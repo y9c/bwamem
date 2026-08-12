@@ -471,6 +471,28 @@ class HierarchicalAligner:
                     return hits, i
         return [], -1
 
+    def align_pe(self, seq1, seq2, min_mapq=0, min_blen=0, min_mlen=0):
+        for i, layer in enumerate(self._layers):
+            results = layer["aligner"].align_raw_pe(
+                seq1, seq2, min_mapq=min_mapq,
+                min_blen=min_blen, min_mlen=min_mlen)
+            if not results:
+                continue
+            max_ratio = layer["max_nm_ratio"]
+            for h1, h2, is_paired, _isize in results:
+                if h1 is None or h2 is None:
+                    continue
+                nm1, nm2 = h1[8], h2[8]
+                qlen1, qlen2 = h1[5] - h1[4], h2[5] - h2[4]
+                if qlen1 <= 0:
+                    qlen1 = len(seq1)
+                if qlen2 <= 0:
+                    qlen2 = len(seq2)
+                if (nm1 / max(qlen1, len(seq1)) <= max_ratio and
+                        nm2 / max(qlen2, len(seq2)) <= max_ratio):
+                    return results, i
+        return [], -1
+
     def seq(self, layer_idx, name, start=0, end=0x7FFFFFFF):
         """Fetch reference sequence from a specific layer."""
         if 0 <= layer_idx < len(self._layers):
