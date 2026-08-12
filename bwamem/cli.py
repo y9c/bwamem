@@ -47,8 +47,8 @@ def cmd_map(args):
     n_total, n_mapped = 0, 0
     layer_counts = [0] * len(layers)
 
-    for name, seq, qual in reader:
-        hits, layer = aligner.align(seq, min_mapq=0)
+    for read in reader:
+        hits, layer = aligner.align(read.sequence, min_mapq=0)
         n_total += 1
         if layer >= 0:
             n_mapped += 1
@@ -67,7 +67,7 @@ def cmd_map(args):
             cigar = hits[0][7]
 
         hi_tag = f"HI:Z:{layer}" if layer >= 0 else "HI:Z:-1"
-        print(f"{name}\t{flag}\t{rname}\t{pos}\t{mapq}\t{cigar}\t*\t0\t0\t{seq}\t{qual}\t{hi_tag}")
+        print(f"{read.name}\t{flag}\t{rname}\t{pos}\t{mapq}\t{cigar}\t*\t0\t0\t{read.sequence}\t{read.quality}\t{hi_tag}")
 
     elapsed = time.time() - t0
     print(f"[bwamem-hier] {n_total} reads, {n_mapped} mapped "
@@ -94,14 +94,14 @@ def cmd_run_layer(args):
         min_score=args.min_score,
     )
     reader = FastxReader(args.reads)
-    for name, seq, qual in reader:
-        hits = aligner.align(seq, min_mapq=0)
+    for read in reader:
+        hits = aligner.align(read.sequence, min_mapq=0)
         flag = 0 if hits else 4
         rname = hits[0][0] if hits else "*"
         pos = int(hits[0][1]) + 1 if hits else 0
         mapq = hits[0][6] if hits else 0
         cigar = hits[0][7] if hits else "*"
-        print(f"{name}\t{flag}\t{rname}\t{pos}\t{mapq}\t{cigar}\t*\t0\t0\t{seq}\t{qual}")
+        print(f"{read.name}\t{flag}\t{rname}\t{pos}\t{mapq}\t{cigar}\t*\t0\t0\t{read.sequence}\t{read.quality}")
 
 
 def main():
