@@ -58,6 +58,7 @@ Documentation = "https://y9c.github.io/bwamem/"
 
 [project.scripts]
 bwamempy = "bwamem.libbwa:main"
+bwamem = "bwamem.cli:main"
 
 [tool.setuptools]
 packages = ["bwamem"]
