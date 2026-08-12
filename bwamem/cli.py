@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""bwamem-hier — hierarchical multi-reference BWA-MEM mapper (CLI).
+"""bwamem — BWA-MEM Python bindings CLI.
 
 Usage:
-    bwamem-hier map -r cont,k=18,n=0.05 -r gene,k=14,n=0.15 \
-                    -r tx,k=10,n=0.30 reads.fq > out.sam
-
-    bwamem-hier index ref1.fa ref2.fa ref3.fa
+    bwamem map -i ref -k 18 -n 0.05 reads.fq
+    bwamem map -i cont -i gene -i tx -k 18,14,10 -n 0.05,0.15,0.30 reads.fq
+    bwamem index ref1.fa ref2.fa ref3.fa
 """
 
 import argparse
@@ -16,31 +15,27 @@ import time
 from bwamem import HierarchicalAligner, BwaIndexer, FastxReader
 
 
-def parse_layer(spec: str) -> dict:
-    cfg = {}
-    for part in spec.split(","):
-        k, _, v = part.partition("=")
-        k = k.strip()
-        v = v.strip()
-        if k in ("path", "p", "index"):
-            cfg["index_prefix"] = v
-        elif k in ("k", "min_seed_len"):
-            cfg["min_seed_len"] = int(v)
-        elif k in ("n", "nm", "max_nm_ratio"):
-            cfg["max_nm_ratio"] = float(v)
-        elif k in ("s", "min_score"):
-            cfg["min_score"] = int(v)
-        elif k in ("c", "max_occ"):
-            cfg["max_occ"] = int(v)
-    return cfg
-
 
 def cmd_map(args):
-    layers = [parse_layer(s) for s in args.ref]
-    if not layers:
-        print("error: at least one -r/--ref required", file=sys.stderr)
+    refs = args.index
+    ks = [int(x) for x in args.seed_len.split(",")] if args.seed_len else [19]
+    ns = [float(x) for x in args.nm_ratio.split(",")] if args.nm_ratio else [1.0]
+    ss = [int(x) for x in args.min_score.split(",")] if args.min_score else [30]
+
+    if len(ks) == 1: ks = ks * len(refs)
+    if len(ns) == 1: ns = ns * len(refs)
+    if len(ss) == 1: ss = ss * len(refs)
+
+    if len(ks) != len(refs) or len(ns) != len(refs) or len(ss) != len(refs):
+        print("error: --seed-len/--nm-ratio/--min-score must have 1 or N values (N=number of -i refs)", file=sys.stderr)
         return 1
 
+    layers = []
+    for i, ref in enumerate(refs):
+        layers.append({
+            "index_prefix": ref, "min_seed_len": ks[i],
+            "max_nm_ratio": ns[i], "min_score": ss[i],
+        })
     aligner = HierarchicalAligner(layers)
     reader = FastxReader(args.reads)
     t0 = time.time()
@@ -67,10 +62,11 @@ def cmd_map(args):
             cigar = hits[0][7]
 
         hi_tag = f"HI:Z:{layer}" if layer >= 0 else "HI:Z:-1"
-        print(f"{read.name}\t{flag}\t{rname}\t{pos}\t{mapq}\t{cigar}\t*\t0\t0\t{read.sequence}\t{read.quality}\t{hi_tag}")
+        qual = read.quality if read.quality else "*"
+        print(f"{read.name}\t{flag}\t{rname}\t{pos}\t{mapq}\t{cigar}\t*\t0\t0\t{read.sequence}\t{qual}\t{hi_tag}")
 
     elapsed = time.time() - t0
-    print(f"[bwamem-hier] {n_total} reads, {n_mapped} mapped "
+    print(f"[bwamem] {n_total} reads, {n_mapped} mapped "
           f"({','.join(f'L{i}={layer_counts[i]}' for i in range(len(layers)))}), "
           f"{elapsed:.1f}s", file=sys.stderr)
 
@@ -79,9 +75,9 @@ def cmd_index(args):
     indexer = BwaIndexer()
     for fa in args.fasta:
         prefix = os.path.splitext(fa)[0]
-        print(f"[bwamem-hier] indexing {fa} → {prefix}.*", file=sys.stderr)
+        print(f"[bwamem] indexing {fa} → {prefix}.*", file=sys.stderr)
         indexer.build_index(fa, prefix)
-    print("[bwamem-hier] indexing done", file=sys.stderr)
+    print("[bwamem] indexing done", file=sys.stderr)
 
 
 def cmd_run_layer(args):
@@ -101,16 +97,23 @@ def cmd_run_layer(args):
         pos = int(hits[0][1]) + 1 if hits else 0
         mapq = hits[0][6] if hits else 0
         cigar = hits[0][7] if hits else "*"
-        print(f"{read.name}\t{flag}\t{rname}\t{pos}\t{mapq}\t{cigar}\t*\t0\t0\t{read.sequence}\t{read.quality}")
+        qual = read.quality if read.quality else "*"
+        print(f"{read.name}\t{flag}\t{rname}\t{pos}\t{mapq}\t{cigar}\t*\t0\t0\t{read.sequence}\t{qual}")
 
 
 def main():
-    ap = argparse.ArgumentParser(description="bwamem-hier: hierarchical BWA-MEM mapper")
+    ap = argparse.ArgumentParser(description="bwamem: BWA-MEM Python bindings CLI")
     sub = ap.add_subparsers(dest="cmd")
 
-    p_map = sub.add_parser("map", help="hierarchical mapping")
-    p_map.add_argument("-r", "--ref", action="append", required=True,
-                       help="layer spec: path,k=SEED,n=NM_RATIO (repeatable)")
+    p_map = sub.add_parser("map", help="BWA-MEM mapping (single or hierarchical)")
+    p_map.add_argument("-i", "--index", action="append", required=True,
+                       help="BWA index prefix (repeatable)")
+    p_map.add_argument("-k", "--seed-len", default="19",
+                       help="min seed length, comma-separated per index (default: 19)")
+    p_map.add_argument("-n", "--nm-ratio", default="1.0",
+                       help="max NM/len ratio, comma-separated per index (default: 1.0)")
+    p_map.add_argument("-T", "--min-score", default="30",
+                       help="min alignment score, comma-sep per index (default: 30)")
     p_map.add_argument("reads", help="FASTQ file (or - for stdin)")
     p_map.set_defaults(func=cmd_map)
 
