@@ -408,6 +408,80 @@ class BwaAligner:
         return hits
 
 
+class HierarchicalAligner:
+    """Priority-ordered multi-reference BWA-MEM aligner.
+
+    Holds N BwaAligner instances (one per reference layer), each with its own
+    index and alignment parameters.  For each read, layers are tried in order;
+    the first layer that produces a passing alignment "claims" the read.
+
+    Typical small-RNA use (seed length gets shorter as priority drops):
+        Layer 0 (contamination): min_seed_len=18, max_nm_ratio=0.05
+        Layer 1 (genes/rRNA):    min_seed_len=14, max_nm_ratio=0.15
+        Layer 2 (transcripts):   min_seed_len=10, max_nm_ratio=0.30
+        → reads with internal modifications (10nt + mutation + 9nt) get caught
+          by layer 2's shorter seeds + BWA-MEM's SW rescue.
+
+    Args:
+        layers: list of dicts, each with keys:
+            index_prefix  (str, required)   : path to BWA index
+            min_seed_len  (int, default=19) : BWA-MEM -k (minimum seed length)
+            min_score     (int, default=30) : BWA-MEM -T (output score threshold)
+            max_nm_ratio  (float, default=0.95) : max allowed NM/l_seq for assignment
+            max_occ       (int, default=500): BWA-MEM -c (max occurrences per seed)
+            softclip_supplementary (bool, default=True)
+            mark_secondary (bool, default=True)
+            clip_penalties (tuple, default=(6,6))
+            unpaired_penalty (int, default=24)
+    """
+
+    def __init__(self, layers):
+        if not layers:
+            raise ValueError("HierarchicalAligner requires at least one layer")
+        self._layers = []
+        for i, cfg in enumerate(layers):
+            self._layers.append({
+                "aligner": BwaAligner(
+                    index_prefix=cfg["index_prefix"],
+                    min_seed_len=cfg.get("min_seed_len", 19),
+                    min_score=cfg.get("min_score", 30),
+                    max_occ=cfg.get("max_occ", 500),
+                    softclip_supplementary=cfg.get("softclip_supplementary", True),
+                    mark_secondary=cfg.get("mark_secondary", True),
+                    clip_penalties=cfg.get("clip_penalties", (6, 6)),
+                    unpaired_penalty=cfg.get("unpaired_penalty", 24),
+                ),
+                "max_nm_ratio": cfg.get("max_nm_ratio", 0.95),
+                "name": cfg.get("index_prefix", f"layer_{i}"),
+            })
+
+    def align(self, seq, min_mapq=0, min_blen=0, min_mlen=0):
+        for i, layer in enumerate(self._layers):
+            hits = layer["aligner"].align(seq, min_mapq=min_mapq,
+                                           min_blen=min_blen, min_mlen=min_mlen)
+            if not hits:
+                continue
+            max_ratio = layer["max_nm_ratio"]
+            for h in hits:
+                nm = h[8]
+                qlen = h[5] - h[4]
+                if qlen <= 0:
+                    qlen = len(seq)
+                if nm / max(qlen, len(seq)) <= max_ratio:
+                    return hits, i
+        return [], -1
+
+    def seq(self, layer_idx, name, start=0, end=0x7FFFFFFF):
+        """Fetch reference sequence from a specific layer."""
+        if 0 <= layer_idx < len(self._layers):
+            return self._layers[layer_idx]["aligner"].seq(name, start, end)
+        return None
+
+    @property
+    def n_layers(self):
+        return len(self._layers)
+
+
 class BwaIndexer:
     def __init__(
         self, algorithm="auto", block_size=10000000, capture_progress=True, verbose=1
